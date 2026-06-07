@@ -70,16 +70,10 @@ export function AuthScreen({
     <section className="login-screen">
       <img className="login-watermark" src="/assets/vizex-logo-transparent.png" alt="" />
       <div className="login-content">
-        <div className="login-copy">
+        <div className="login-copy" aria-label="VIZEX">
           <img className="login-logo" src="/assets/vizex-logo-transparent.png" alt="VIZEX logo" />
-          <span className="eyebrow">VIZEXAPP klientu platforma</span>
-          <h1>Droša piekļuve jūsu video sistēmai.</h1>
-          <p>Tiešraides, ieraksti, kameru pārskats un klienta profils vienā tīrā darba vidē.</p>
-          <div className="login-meta" aria-label="Platformas statuss">
-            <span>Supabase Auth</span>
-            <span>Klienta profils</span>
-            <span>Vercel preview</span>
-          </div>
+          <span className="eyebrow">VIZEXAPP</span>
+          <p>Klienta piekļuve video sistēmām.</p>
         </div>
 
         <div className="auth-card">
@@ -87,7 +81,7 @@ export function AuthScreen({
             {[
               ["login", "Pieslēgties"],
               ["register", "Reģistrēties"],
-              ["recover", "Aizmirsi paroli?"]
+              ["recover", "Parole"]
             ].map(([panel, label]) => (
               <button
                 className={`auth-tab ${activePanel === panel ? "active" : ""}`}
@@ -102,9 +96,8 @@ export function AuthScreen({
 
           <section className={`auth-panel ${activePanel === "login" ? "active" : ""}`}>
             <div className="login-card-head">
-              <span className="eyebrow">Klienta pieslēgšanās</span>
-              <h2>Ienākt savā profilā</h2>
-              <p>Izmantojiet reģistrētu e-pastu un paroli. Konti tiek sinhronizēti Supabase mākonī.</p>
+              <span className="eyebrow">Klienta konts</span>
+              <h2>Pieslēgties</h2>
             </div>
             <form className="login-form" onSubmit={submitLogin}>
               <label>
@@ -118,18 +111,17 @@ export function AuthScreen({
               <button className="primary-button login-submit" type="submit">Pieslēgties</button>
             </form>
             <div className="auth-actions">
-              <button className="ghost-button fill-demo" onClick={fillDemo} type="button">Aizpildīt demo datus</button>
+              <button className="ghost-button fill-demo" onClick={fillDemo} type="button">Demo dati</button>
               <button className="ghost-button fill-demo" onClick={() => onResendConfirmation(loginEmail || registerEmail)} type="button">
-                Nosūtīt apstiprinājuma e-pastu vēlreiz
+                Nosūtīt apstiprinājumu
               </button>
             </div>
           </section>
 
           <section className={`auth-panel ${activePanel === "register" ? "active" : ""}`}>
             <div className="login-card-head">
-              <span className="eyebrow">Jauns klienta konts</span>
-              <h2>Izveidot profilu</h2>
-              <p>Datubāzē tiek reģistrēts tikai klienta e-pasts un konta statuss. Personas kodus un liekus datus neprasām.</p>
+              <span className="eyebrow">Jauns konts</span>
+              <h2>Reģistrēties</h2>
             </div>
             <form className="login-form" onSubmit={submitRegister}>
               <label>
@@ -144,22 +136,21 @@ export function AuthScreen({
                 Atkārtot paroli
                 <input value={registerPasswordConfirm} onChange={(event) => setRegisterPasswordConfirm(event.target.value)} type="password" autoComplete="new-password" required minLength={8} />
               </label>
-              <button className="primary-button login-submit" type="submit">Reģistrēt klientu</button>
+              <button className="primary-button login-submit" type="submit">Izveidot kontu</button>
             </form>
           </section>
 
           <section className={`auth-panel ${activePanel === "recover" ? "active" : ""}`}>
             <div className="login-card-head">
-              <span className="eyebrow">Piekļuves atkopšana</span>
+              <span className="eyebrow">Atkopšana</span>
               <h2>Atjaunot paroli</h2>
-              <p>Ievadiet reģistrēto e-pastu, un Supabase nosūtīs paroles atjaunošanas saiti.</p>
             </div>
             <form className="login-form" onSubmit={submitRecover}>
               <label>
-                Reģistrētais e-pasts
+                E-pasts
                 <input value={recoverEmail} onChange={(event) => setRecoverEmail(event.target.value)} type="email" autoComplete="email" required />
               </label>
-              <button className="primary-button login-submit" type="submit">Nosūtīt atjaunošanas saiti</button>
+              <button className="primary-button login-submit" type="submit">Nosūtīt saiti</button>
             </form>
             {resetVisible && (
               <form className="login-form recovery-reset" onSubmit={submitReset}>
