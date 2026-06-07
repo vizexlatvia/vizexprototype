@@ -59,6 +59,11 @@ export function AuthScreen({
     setNewPassword("");
   }
 
+  function openRecoverPanel() {
+    setRecoverEmail(loginEmail);
+    onPanelChange("recover");
+  }
+
   return (
     <section className="login-screen">
       <img className="login-watermark" src="/assets/vizex-logo-transparent.png" alt="" />
@@ -97,7 +102,7 @@ export function AuthScreen({
                 Parole
                 <input value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} type="password" autoComplete="current-password" required minLength={6} />
               </label>
-              <button className="forgot-password-link" onClick={() => onPanelChange("recover")} type="button">
+              <button className="forgot-password-link" onClick={openRecoverPanel} type="button">
                 Aizmirsi paroli?
               </button>
               <button className="primary-button login-submit" type="submit">Pieslēgties</button>
@@ -126,7 +131,7 @@ export function AuthScreen({
             <div className="login-card-head recovery-head">
               <h2>Aizmirsi paroli?</h2>
             </div>
-            <form className="login-form" onSubmit={submitRecover}>
+            <form className="login-form recovery-form" onSubmit={submitRecover}>
               <label>
                 E-pasts
                 <input value={recoverEmail} onChange={(event) => setRecoverEmail(event.target.value)} type="email" autoComplete="email" required />

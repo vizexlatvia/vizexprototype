@@ -49,34 +49,47 @@ button {
   position: relative;
   overflow: hidden;
   display: grid;
-  place-items: stretch;
-  padding: clamp(24px, 4vw, 56px);
+  place-items: center;
+  padding: clamp(24px, 4vw, 52px);
   background:
-    linear-gradient(90deg, rgba(2, 6, 10, 0.58) 0%, rgba(4, 9, 15, 0.5) 42%, rgba(4, 8, 13, 0.86) 100%),
-    linear-gradient(180deg, rgba(3, 7, 12, 0.34) 0%, rgba(5, 10, 17, 0.78) 100%),
-    radial-gradient(circle at 76% 50%, rgba(76, 159, 255, 0.16), transparent 34%),
-    url("/assets/login-background.jpg") 42% center / cover no-repeat,
-    linear-gradient(145deg, #05090e 0%, #0a121b 48%, #101b28 100%);
+    linear-gradient(180deg, rgba(2, 4, 7, 0.72) 0%, rgba(4, 7, 11, 0.86) 58%, rgba(3, 5, 8, 0.95) 100%),
+    radial-gradient(ellipse at 50% 14%, rgba(45, 224, 214, 0.12), transparent 34%),
+    radial-gradient(ellipse at 52% 58%, rgba(76, 159, 255, 0.1), transparent 42%),
+    url("/assets/black-dust-background.png") center / cover no-repeat,
+    #050609;
+}
+
+.login-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.34), transparent 32%, transparent 68%, rgba(0, 0, 0, 0.34)),
+    radial-gradient(ellipse at center, transparent 38%, rgba(0, 0, 0, 0.62) 100%);
+  pointer-events: none;
 }
 
 .login-screen::after {
   content: "";
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(227, 240, 252, 0.055) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(227, 240, 252, 0.045) 1px, transparent 1px);
-  background-size: 46px 46px;
-  mask-image: linear-gradient(120deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 88px 88px;
+  opacity: 0.22;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 24%, #000 72%, transparent 100%);
   pointer-events: none;
 }
 
 .login-watermark {
   position: absolute;
-  width: min(54vw, 780px);
-  left: clamp(42px, 8vw, 132px);
-  top: clamp(54px, 10vh, 118px);
-  opacity: 0.045;
+  z-index: 0;
+  width: min(42vw, 520px);
+  left: calc(50% - 260px);
+  top: clamp(236px, 35vh, 292px);
+  transform: translate(-50%, -22%);
+  opacity: 0.075;
   filter: brightness(0) invert(1);
   mix-blend-mode: normal;
   pointer-events: none;
@@ -86,37 +99,38 @@ button {
 .login-content {
   position: relative;
   z-index: 1;
-  width: min(100%, 1180px);
-  min-height: calc(100vh - clamp(48px, 8vw, 112px));
+  width: min(100%, 390px);
+  min-height: calc(100vh - clamp(48px, 8vw, 104px));
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
-  align-items: center;
-  gap: clamp(36px, 8vw, 118px);
-  justify-items: stretch;
+  grid-template-columns: 1fr;
+  align-content: start;
+  justify-items: center;
+  gap: clamp(18px, 3vh, 28px);
+  padding-top: clamp(10px, 5vh, 58px);
 }
 
 .login-logo {
-  width: min(48vw, 450px);
-  height: 225px;
+  width: clamp(260px, 24vw, 350px);
+  height: clamp(136px, 12.6vw, 184px);
   object-fit: contain;
   margin: 0;
-  filter: brightness(0) invert(1) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.34));
+  filter: brightness(0) invert(1) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.36));
   opacity: 0.96;
 }
 
 .brand-lockup {
   display: inline-grid;
   justify-items: center;
-  gap: 12px;
-  max-width: min(48vw, 450px);
+  gap: 6px;
+  max-width: 360px;
 }
 
 .login-copy {
-  max-width: 480px;
-  text-align: left;
+  max-width: 390px;
+  text-align: center;
   align-self: center;
-  padding-left: clamp(0px, 2vw, 34px);
+  padding-left: 0;
 }
 
 .login-copy h1 {
@@ -127,11 +141,11 @@ button {
 }
 
 .login-tagline {
-  max-width: 410px;
+  max-width: 320px;
   margin: 0;
-  color: #c9d6e1;
-  font-size: 14px;
-  font-weight: 700;
+  color: #d4dce4;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.45;
   text-align: center;
 }
@@ -159,39 +173,77 @@ button {
 
 .login-card,
 .auth-card {
-  width: min(100%, 420px);
-  justify-self: end;
-  padding: 24px;
-  border: 1px solid rgba(202, 218, 235, 0.14);
+  position: relative;
+  overflow: hidden;
+  width: min(100%, 356px);
+  justify-self: center;
+  padding: 22px;
+  border: 1px solid rgba(222, 236, 246, 0.16);
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(15, 24, 35, 0.84), rgba(6, 11, 18, 0.8));
-  box-shadow: 0 26px 76px rgba(0, 0, 0, 0.48);
+  background:
+    linear-gradient(180deg, rgba(20, 24, 30, 0.82), rgba(8, 11, 16, 0.82)),
+    rgba(8, 11, 16, 0.76);
+  box-shadow:
+    0 34px 92px rgba(0, 0, 0, 0.58),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
   backdrop-filter: blur(24px);
+}
+
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 13% 0%, rgba(51, 232, 218, 0.42), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 34%);
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.auth-card::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  pointer-events: none;
+}
+
+.auth-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .auth-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 22px;
+  gap: 4px;
+  min-height: 38px;
+  margin-bottom: 20px;
+  padding: 3px;
+  border: 1px solid rgba(222, 236, 246, 0.08);
+  border-radius: 8px;
+  background: rgba(2, 4, 7, 0.38);
 }
 
 .auth-tab {
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(238, 245, 251, 0.05);
-  color: var(--muted);
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8994a0;
   padding: 0 10px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
   white-space: nowrap;
 }
 
 .auth-tab.active {
-  background: linear-gradient(135deg, rgba(67, 215, 243, 0.18), rgba(76, 159, 255, 0.26));
-  border-color: rgba(67, 215, 243, 0.42);
+  background: linear-gradient(135deg, rgba(43, 225, 213, 0.18), rgba(76, 159, 255, 0.16));
   color: #fff;
+  box-shadow: 0 10px 26px rgba(35, 222, 216, 0.12);
 }
 
 .auth-panel {
@@ -211,7 +263,7 @@ button {
 
 .login-card-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.12;
   letter-spacing: 0;
 }
@@ -229,42 +281,44 @@ button {
 
 .login-form {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   margin-top: 0;
 }
 
 .login-form label {
   display: grid;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 13px;
+  gap: 6px;
+  color: #a8b1ba;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .login-form input {
   width: 100%;
-  min-height: 46px;
-  border: 1px solid var(--line);
+  min-height: 42px;
+  border: 1px solid rgba(222, 236, 246, 0.1);
   border-radius: 8px;
-  background: rgba(4, 9, 15, 0.72);
+  background: rgba(3, 6, 10, 0.68);
   color: var(--ink);
-  padding: 0 13px;
+  padding: 0 12px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
 }
 
 .login-form input:focus {
-  outline: 2px solid rgba(67, 215, 243, 0.28);
-  border-color: rgba(67, 215, 243, 0.46);
+  outline: 2px solid rgba(43, 225, 213, 0.22);
+  border-color: rgba(43, 225, 213, 0.42);
 }
 
 .forgot-password-link {
   width: max-content;
   min-height: auto;
-  margin: -4px 0 2px;
+  justify-self: end;
+  margin: -2px 0 2px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: #8fbff0;
-  font-size: 12px;
+  color: #8fded8;
+  font-size: 11px;
   font-weight: 700;
   text-align: left;
 }
@@ -277,7 +331,12 @@ button {
 }
 
 .back-to-login {
+  justify-self: start;
   margin-top: 14px;
+}
+
+.recovery-form {
+  margin-top: 16px;
 }
 
 .recovery-reset {
@@ -287,7 +346,13 @@ button {
 
 .login-submit {
   width: 100%;
+  min-height: 42px;
   margin-top: 4px;
+}
+
+.auth-card .primary-button {
+  background: linear-gradient(135deg, #0b5fa8, #31d8e2);
+  box-shadow: 0 16px 36px rgba(49, 216, 226, 0.2);
 }
 
 .auth-actions {
@@ -942,20 +1007,20 @@ body.admin-mode .client-only {
 
 @media (max-width: 1120px) {
   .login-content {
-    width: min(100%, 980px);
-    grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
-    gap: 44px;
+    width: min(100%, 390px);
+    grid-template-columns: 1fr;
+    gap: 22px;
   }
 
   .login-logo {
-    width: 345px;
-    height: 183px;
+    width: 318px;
+    height: 168px;
   }
 
   .login-watermark {
-    width: 640px;
-    left: 42px;
-    top: 72px;
+    width: 480px;
+    left: calc(50% - 230px);
+    top: 256px;
   }
 
   .app-shell {
@@ -976,15 +1041,17 @@ body.admin-mode .client-only {
 
 @media (max-width: 780px) {
   .login-screen {
-    padding: 28px 18px;
+    padding: 22px 18px;
     place-items: center;
   }
 
   .login-content {
-    min-height: auto;
+    width: min(100%, 360px);
+    min-height: calc(100vh - 44px);
     grid-template-columns: 1fr;
-    gap: 24px;
+    gap: 20px;
     justify-items: center;
+    padding-top: 10px;
   }
 
   .login-copy {
@@ -994,9 +1061,9 @@ body.admin-mode .client-only {
   }
 
   .login-logo {
-    width: 248px;
-    height: 132px;
-    margin: 0 auto 14px;
+    width: 246px;
+    height: 130px;
+    margin: 0 auto;
   }
 
   .login-copy h1 {
@@ -1004,12 +1071,12 @@ body.admin-mode .client-only {
   }
 
   .brand-lockup {
-    max-width: 280px;
+    max-width: 300px;
   }
 
   .login-tagline {
     margin-inline: auto;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .login-meta {
@@ -1017,12 +1084,12 @@ body.admin-mode .client-only {
   }
 
   .login-watermark {
-    width: 440px;
-    left: 50%;
-    top: 38px;
+    width: 360px;
+    left: calc(50% - 108px);
+    top: 238px;
     bottom: auto;
-    transform: translateX(-50%);
-    opacity: 0.035;
+    transform: translate(-50%, -20%);
+    opacity: 0.055;
   }
 
   .login-card,
