@@ -73,10 +73,10 @@ button {
 
 .login-watermark {
   position: absolute;
-  width: min(64vw, 880px);
-  left: clamp(-240px, -11vw, -96px);
-  bottom: -210px;
-  opacity: 0.055;
+  width: min(54vw, 780px);
+  left: clamp(42px, 8vw, 132px);
+  top: clamp(54px, 10vh, 118px);
+  opacity: 0.045;
   filter: brightness(0) invert(1);
   mix-blend-mode: normal;
   pointer-events: none;
@@ -97,12 +97,19 @@ button {
 }
 
 .login-logo {
-  width: min(36vw, 300px);
-  height: 150px;
+  width: min(48vw, 450px);
+  height: 225px;
   object-fit: contain;
-  margin: 0 0 20px;
+  margin: 0;
   filter: brightness(0) invert(1) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.34));
   opacity: 0.96;
+}
+
+.brand-lockup {
+  display: inline-grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: min(48vw, 450px);
 }
 
 .login-copy {
@@ -112,11 +119,6 @@ button {
   padding-left: clamp(0px, 2vw, 34px);
 }
 
-.login-copy .eyebrow {
-  color: #d7e7f3;
-  font-size: 11px;
-}
-
 .login-copy h1 {
   max-width: 420px;
   margin: 12px 0 0;
@@ -124,12 +126,14 @@ button {
   color: #f5f9fc;
 }
 
-.login-copy p {
-  max-width: 320px;
-  margin: 10px 0 0;
-  color: #a9b7c4;
+.login-tagline {
+  max-width: 410px;
+  margin: 0;
+  color: #c9d6e1;
   font-size: 14px;
-  line-height: 1.5;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
 }
 
 .login-meta {
@@ -167,9 +171,9 @@ button {
 
 .auth-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .auth-tab {
@@ -206,10 +210,14 @@ button {
 }
 
 .login-card-head h2 {
-  margin: 8px 0 0;
-  font-size: 24px;
+  margin: 0;
+  font-size: 18px;
   line-height: 1.12;
   letter-spacing: 0;
+}
+
+.recovery-head {
+  margin-top: 2px;
 }
 
 .login-card-head p {
@@ -222,7 +230,7 @@ button {
 .login-form {
   display: grid;
   gap: 14px;
-  margin-top: 22px;
+  margin-top: 0;
 }
 
 .login-form label {
@@ -246,6 +254,30 @@ button {
 .login-form input:focus {
   outline: 2px solid rgba(67, 215, 243, 0.28);
   border-color: rgba(67, 215, 243, 0.46);
+}
+
+.forgot-password-link {
+  width: max-content;
+  min-height: auto;
+  margin: -4px 0 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8fbff0;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.forgot-password-link:hover,
+.forgot-password-link:focus-visible {
+  color: #d7ecff;
+  text-decoration: underline;
+  outline: none;
+}
+
+.back-to-login {
+  margin-top: 14px;
 }
 
 .recovery-reset {
@@ -916,12 +948,14 @@ body.admin-mode .client-only {
   }
 
   .login-logo {
-    width: 230px;
-    height: 122px;
+    width: 345px;
+    height: 183px;
   }
 
   .login-watermark {
-    width: 720px;
+    width: 640px;
+    left: 42px;
+    top: 72px;
   }
 
   .app-shell {
@@ -960,8 +994,8 @@ body.admin-mode .client-only {
   }
 
   .login-logo {
-    width: 178px;
-    height: 94px;
+    width: 248px;
+    height: 132px;
     margin: 0 auto 14px;
   }
 
@@ -969,7 +1003,11 @@ body.admin-mode .client-only {
     font-size: 28px;
   }
 
-  .login-copy p {
+  .brand-lockup {
+    max-width: 280px;
+  }
+
+  .login-tagline {
     margin-inline: auto;
     font-size: 13px;
   }
@@ -979,11 +1017,12 @@ body.admin-mode .client-only {
   }
 
   .login-watermark {
-    width: 560px;
+    width: 440px;
     left: 50%;
-    bottom: -150px;
+    top: 38px;
+    bottom: auto;
     transform: translateX(-50%);
-    opacity: 0.04;
+    opacity: 0.035;
   }
 
   .login-card,
@@ -994,7 +1033,7 @@ body.admin-mode .client-only {
   }
 
   .auth-tabs {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
   }
 

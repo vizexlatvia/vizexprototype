@@ -21,7 +21,6 @@ export function AuthScreen({
   onRegister,
   onRecover,
   onUpdatePassword,
-  onResendConfirmation,
   onToast
 }: AuthScreenProps) {
   const [loginEmail, setLoginEmail] = useState("client@vizex.app");
@@ -60,31 +59,25 @@ export function AuthScreen({
     setNewPassword("");
   }
 
-  function fillDemo() {
-    setLoginEmail("client@vizex.app");
-    setLoginPassword("");
-    onToast("Ievadiet savu Supabase konta paroli");
-  }
-
   return (
     <section className="login-screen">
       <img className="login-watermark" src="/assets/vizex-logo-transparent.png" alt="" />
       <div className="login-content">
         <div className="login-copy" aria-label="VIZEX">
-          <img className="login-logo" src="/assets/vizex-logo-transparent.png" alt="VIZEX logo" />
-          <span className="eyebrow">VIZEXAPP</span>
-          <p>Klienta piekļuve video sistēmām.</p>
+          <div className="brand-lockup">
+            <img className="login-logo" src="/assets/vizex-logo-transparent.png" alt="VIZEX logo" />
+            <p className="login-tagline">Tiešsaistes videonovērošanas sistēmu platforma</p>
+          </div>
         </div>
 
         <div className="auth-card">
           <div className="auth-tabs" aria-label="Autentifikācijas sadaļas">
             {[
               ["login", "Pieslēgties"],
-              ["register", "Reģistrēties"],
-              ["recover", "Parole"]
+              ["register", "Reģistrēties"]
             ].map(([panel, label]) => (
               <button
-                className={`auth-tab ${activePanel === panel ? "active" : ""}`}
+                className={`auth-tab ${activePanel === panel || (activePanel === "recover" && panel === "login") ? "active" : ""}`}
                 key={panel}
                 onClick={() => onPanelChange(panel as AuthPanel)}
                 type="button"
@@ -95,10 +88,6 @@ export function AuthScreen({
           </div>
 
           <section className={`auth-panel ${activePanel === "login" ? "active" : ""}`}>
-            <div className="login-card-head">
-              <span className="eyebrow">Klienta konts</span>
-              <h2>Pieslēgties</h2>
-            </div>
             <form className="login-form" onSubmit={submitLogin}>
               <label>
                 E-pasts
@@ -108,21 +97,14 @@ export function AuthScreen({
                 Parole
                 <input value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} type="password" autoComplete="current-password" required minLength={6} />
               </label>
+              <button className="forgot-password-link" onClick={() => onPanelChange("recover")} type="button">
+                Aizmirsi paroli?
+              </button>
               <button className="primary-button login-submit" type="submit">Pieslēgties</button>
             </form>
-            <div className="auth-actions">
-              <button className="ghost-button fill-demo" onClick={fillDemo} type="button">Demo dati</button>
-              <button className="ghost-button fill-demo" onClick={() => onResendConfirmation(loginEmail || registerEmail)} type="button">
-                Nosūtīt apstiprinājumu
-              </button>
-            </div>
           </section>
 
           <section className={`auth-panel ${activePanel === "register" ? "active" : ""}`}>
-            <div className="login-card-head">
-              <span className="eyebrow">Jauns konts</span>
-              <h2>Reģistrēties</h2>
-            </div>
             <form className="login-form" onSubmit={submitRegister}>
               <label>
                 E-pasts
@@ -141,9 +123,8 @@ export function AuthScreen({
           </section>
 
           <section className={`auth-panel ${activePanel === "recover" ? "active" : ""}`}>
-            <div className="login-card-head">
-              <span className="eyebrow">Atkopšana</span>
-              <h2>Atjaunot paroli</h2>
+            <div className="login-card-head recovery-head">
+              <h2>Aizmirsi paroli?</h2>
             </div>
             <form className="login-form" onSubmit={submitRecover}>
               <label>
@@ -152,6 +133,9 @@ export function AuthScreen({
               </label>
               <button className="primary-button login-submit" type="submit">Nosūtīt saiti</button>
             </form>
+            <button className="forgot-password-link back-to-login" onClick={() => onPanelChange("login")} type="button">
+              Atpakaļ uz pieslēgšanos
+            </button>
             {resetVisible && (
               <form className="login-form recovery-reset" onSubmit={submitReset}>
                 <label>
