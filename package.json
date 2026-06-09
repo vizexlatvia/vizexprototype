@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "gateway": "node gateway/dahua-gateway.mjs",
+    "tunnel": "npm exec --yes localtunnel -- --port 8787 --local-host 127.0.0.1",
     "build": "tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

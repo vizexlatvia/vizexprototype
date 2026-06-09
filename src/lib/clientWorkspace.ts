@@ -11,6 +11,8 @@ export type CameraProfile = {
   password: string;
   channel: string;
   subtype: string;
+  remoteGatewayUrl?: string;
+  remoteGatewayToken?: string;
   status: "Online";
   createdAt: string;
   lastStartedAt?: string;
@@ -31,6 +33,8 @@ export type ClientWorkspaceState = {
   activityItems: ActivityItem[];
   gridLayout: GridLayoutState;
 };
+
+const maxActivityItems = 7;
 
 const workspaceCachePrefix = "vizex_camera_workspace_cache_v1";
 const legacyCameraProfilesStoragePrefix = "vizex_camera_profiles_v1";
@@ -59,6 +63,19 @@ export function normalizeCameraIp(value: string) {
     .replace(/:\d+$/, "");
 }
 
+export function normalizeGatewayBaseUrl(value: string) {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+
+  try {
+    const url = new URL(trimmed);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return "";
+  }
+}
+
 export function defaultGridLayoutState(): GridLayoutState {
   return {
     active: false,
@@ -77,6 +94,8 @@ function sanitizeCameraProfile(item: unknown, index: number): CameraProfile | nu
   const password = String(source.password ?? "");
   const channel = String(source.channel ?? "1").replace(/\D/g, "") || "1";
   const subtype = String(source.subtype ?? "1").replace(/\D/g, "") || "1";
+  const remoteGatewayUrl = normalizeGatewayBaseUrl(String(source.remoteGatewayUrl ?? ""));
+  const remoteGatewayToken = String(source.remoteGatewayToken ?? "").trim();
 
   if (!name || !ip || !username || !password) return null;
 
@@ -89,6 +108,8 @@ function sanitizeCameraProfile(item: unknown, index: number): CameraProfile | nu
     password,
     channel,
     subtype,
+    remoteGatewayUrl,
+    remoteGatewayToken,
     status: "Online",
     createdAt: String(source.createdAt ?? new Date().toISOString()),
     lastStartedAt: source.lastStartedAt ? String(source.lastStartedAt) : undefined
@@ -130,7 +151,7 @@ function sanitizeWorkspaceState(state: Partial<ClientWorkspaceState> | null | un
       ? state.cameraProfiles.map(sanitizeCameraProfile).filter(Boolean) as CameraProfile[]
       : [],
     activityItems: Array.isArray(state?.activityItems)
-      ? state.activityItems.map(sanitizeActivityItem).filter(Boolean).slice(0, 30) as ActivityItem[]
+      ? state.activityItems.map(sanitizeActivityItem).filter(Boolean).slice(0, maxActivityItems) as ActivityItem[]
       : [],
     gridLayout: sanitizeGridLayout(state?.gridLayout)
   };

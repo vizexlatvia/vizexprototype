@@ -9,3 +9,5 @@ vite-dev.log
 vite.config.js
 vite.config.d.ts
 login-preview-*.png
+tools/
+gateway-logs/

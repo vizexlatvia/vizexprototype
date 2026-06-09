@@ -4,6 +4,7 @@ import {
   defaultGridLayoutState,
   loadWorkspaceState,
   normalizeCameraIp,
+  normalizeGatewayBaseUrl,
   readWorkspaceCache,
   saveWorkspaceState,
   writeWorkspaceCache,
@@ -36,6 +37,8 @@ type CameraProfileDraft = {
   username: string;
   password: string;
   channel: string;
+  remoteGatewayUrl: string;
+  remoteGatewayToken: string;
 };
 
 const defaultCameraProfileDraft: CameraProfileDraft = {
@@ -43,8 +46,12 @@ const defaultCameraProfileDraft: CameraProfileDraft = {
   ip: "192.168.8.10",
   username: "",
   password: "",
-  channel: "1"
+  channel: "1",
+  remoteGatewayUrl: "",
+  remoteGatewayToken: ""
 };
+
+const maxActivityItems = 7;
 
 const emptyCamera: Camera = {
   id: "empty-camera",
@@ -133,8 +140,14 @@ function buildDahuaGatewayUrl(profile: CameraProfile) {
     channel: profile.channel || "1",
     subtype: profile.subtype || "1"
   });
+  const remoteGatewayUrl = normalizeGatewayBaseUrl(profile.remoteGatewayUrl ?? "");
+  const remoteGatewayToken = (profile.remoteGatewayToken ?? "").trim();
 
-  return `/api/dahua/mjpeg?${params.toString()}`;
+  if (remoteGatewayToken) {
+    params.set("token", remoteGatewayToken);
+  }
+
+  return `${remoteGatewayUrl || ""}/api/dahua/mjpeg?${params.toString()}`;
 }
 
 function profileToCamera(profile: CameraProfile, index: number): Camera {
@@ -150,13 +163,41 @@ function profileToCamera(profile: CameraProfile, index: number): Camera {
   };
 }
 
+function cameraCodeForIndex(index: number) {
+  return `CAM-${String(index + 1).padStart(2, "0")}`;
+}
+
 function nextCameraCode(profiles: CameraProfile[]) {
-  const nextNumber = profiles.reduce((max, profile) => {
+  const usedNumbers = new Set(profiles.map((profile) => {
     const match = profile.code.match(/CAM-(\d+)/i);
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0) + 1;
+    return match ? Number(match[1]) : 0;
+  }));
+  let nextNumber = 1;
+
+  while (usedNumbers.has(nextNumber)) {
+    nextNumber += 1;
+  }
 
   return `CAM-${String(nextNumber).padStart(2, "0")}`;
+}
+
+function renumberCameraProfiles(profiles: CameraProfile[]) {
+  return profiles.map((profile, index) => ({
+    ...profile,
+    code: cameraCodeForIndex(index)
+  }));
+}
+
+function buildCameraCodeMap(before: CameraProfile[], after: CameraProfile[]) {
+  return before.reduce<Record<string, string>>((map, profile, index) => {
+    const nextCode = after[index]?.code;
+    if (nextCode) map[profile.code] = nextCode;
+    return map;
+  }, {});
+}
+
+function mapCameraCode(code: string, codeMap: Record<string, string>) {
+  return codeMap[code] ?? code;
 }
 
 export function Dashboard({
@@ -230,7 +271,7 @@ export function Dashboard({
   const cameraCodes = useMemo(() => managedCameras.map((camera) => camera.code), [managedCameras]);
   const overviewJournalItems = useMemo(() => (
     activityItems.length
-      ? activityItems.slice(0, 6).map((item) => ({ time: item.time, type: "Notikums", message: item.message, level: "ok" }))
+      ? activityItems.slice(0, maxActivityItems).map((item) => ({ time: item.time, type: "Notikums", message: item.message, level: "ok" }))
       : [{ time: currentTimeLabel(), type: "Sistēma", message: "Kameru pārvaldība gatava. Pievieno pirmo kameru.", level: "warning" }]
   ), [activityItems]);
   const networkDevices = useMemo(() => {
@@ -288,7 +329,7 @@ export function Dashboard({
   useEffect(() => {
     const workspaceState = {
       cameraProfiles,
-      activityItems: activityItems.slice(0, 30),
+      activityItems: activityItems.slice(0, maxActivityItems),
       gridLayout: {
         active: customGridActive,
         presetId: activeGridPreset.id,
@@ -365,7 +406,7 @@ export function Dashboard({
 
   function appendActivity(message: string) {
     const nextActivity = createActivity(message);
-    setActivityItems((current) => [nextActivity, ...current].slice(0, 30));
+    setActivityItems((current) => [nextActivity, ...current].slice(0, maxActivityItems));
   }
 
   function selectCamera(camera: Camera) {
@@ -439,6 +480,8 @@ export function Dashboard({
     const username = cameraDraft.username.trim();
     const password = cameraDraft.password;
     const channel = cameraDraft.channel.trim() || "1";
+    const remoteGatewayUrl = normalizeGatewayBaseUrl(cameraDraft.remoteGatewayUrl);
+    const remoteGatewayToken = cameraDraft.remoteGatewayToken.trim();
 
     if (!name || !ip || !username || !password) {
       onToast("Aizpildi nosaukumu, IP, lietotāju un paroli");
@@ -461,6 +504,8 @@ export function Dashboard({
       password,
       channel,
       subtype: "1",
+      remoteGatewayUrl,
+      remoteGatewayToken,
       status: "Online",
       createdAt: new Date().toISOString(),
       lastStartedAt: new Date().toISOString()
@@ -491,11 +536,33 @@ export function Dashboard({
     const removedProfile = cameraProfiles.find((item) => item.id === profileId);
     if (!removedProfile) return;
 
-    setCameraProfiles((current) => current.filter((item) => item.id !== profileId));
-    setGridSlots((current) => current.map((code) => (code === removedProfile.code ? null : code)));
-    setPoweredOffCameraCodes((current) => current.filter((code) => code !== removedProfile.code));
-    appendActivity(`${removedProfile.code}: ${removedProfile.name} noņemta no kameru pārvaldības`);
-    onToast(`${removedProfile.code} noņemta`);
+    const remainingProfiles = cameraProfiles.filter((item) => item.id !== profileId);
+    const renumberedProfiles = renumberCameraProfiles(remainingProfiles);
+    const codeMap = buildCameraCodeMap(remainingProfiles, renumberedProfiles);
+    const nextActiveProfile = renumberedProfiles[0];
+    const nextActiveCode = activeCameraCode === removedProfile.code
+      ? nextActiveProfile?.code ?? emptyCamera.code
+      : mapCameraCode(activeCameraCode, codeMap);
+    const nextRecordingCode = recordingCameraCode === removedProfile.code
+      ? nextActiveProfile?.code ?? emptyCamera.code
+      : mapCameraCode(recordingCameraCode, codeMap);
+
+    setCameraProfiles(renumberedProfiles);
+    setGridSlots((current) => current.map((code) => {
+      if (!code || code === removedProfile.code) return null;
+      return mapCameraCode(code, codeMap);
+    }));
+    setPoweredOffCameraCodes((current) => current
+      .filter((code) => code !== removedProfile.code)
+      .map((code) => mapCameraCode(code, codeMap))
+    );
+    setActiveCameraCode(nextActiveCode);
+    setRecordingCameraCode(nextRecordingCode);
+    if (nextActiveProfile) {
+      onCameraChange(profileToCamera(nextActiveProfile, renumberedProfiles.indexOf(nextActiveProfile)));
+    }
+    appendActivity(`${removedProfile.code}: ${removedProfile.name} nonemta no kameru parvaldibas`);
+    onToast(`${removedProfile.code} nonemta, kameru numeracija sakartota`);
   }
 
   function renderCameraManagementPanel() {
@@ -508,10 +575,10 @@ export function Dashboard({
           </div>
           <span className={`pill ${workspaceSyncState === "cloud" ? "" : "warning"}`}>
             {workspaceSyncState === "loading"
-              ? "SinhronizÄ“..."
+              ? "Sinhronize..."
               : workspaceSyncState === "cloud"
-                ? `${assignedCameraCount} profili | MÄkonÄ«`
-                : `${assignedCameraCount} profili | Tikai Å¡eit`}
+                ? `${assignedCameraCount} profili | Cloud`
+                : `${assignedCameraCount} profili | Lokali`}
           </span>
         </div>
         <form className="camera-management-form" onSubmit={submitCameraProfile}>
@@ -561,12 +628,32 @@ export function Dashboard({
               type="password"
             />
           </label>
+          <label>
+            Remote gateway URL
+            <input
+              value={cameraDraft.remoteGatewayUrl}
+              onChange={(event) => updateCameraDraft("remoteGatewayUrl", event.target.value)}
+              onBlur={(event) => updateCameraDraft("remoteGatewayUrl", normalizeGatewayBaseUrl(event.target.value))}
+              placeholder="https://vizex-gateway.example.com"
+              type="url"
+            />
+          </label>
+          <label>
+            Gateway token
+            <input
+              value={cameraDraft.remoteGatewayToken}
+              onChange={(event) => updateCameraDraft("remoteGatewayToken", event.target.value)}
+              placeholder="Optional"
+              type="password"
+            />
+          </label>
           <button className="primary-button compact" type="submit">Pievienot kameru</button>
         </form>
         <div className="camera-management-note">
           <span>Channel: <strong>izvēlies formā</strong></span>
           <span>Subtype: <strong>1</strong></span>
           <span>HTTP ports: <strong>80</strong></span>
+          <span>Gateway: <strong>Local / Remote</strong></span>
         </div>
         <div className="camera-profile-list">
           {cameraProfiles.length ? cameraProfiles.map((profileItem) => (
@@ -574,7 +661,7 @@ export function Dashboard({
               <span className="camera-number">{profileItem.code.replace("CAM-", "")}</span>
               <span className="camera-profile-main">
                 <strong>{profileItem.code} {profileItem.name}</strong>
-                <small>{profileItem.ip} | CH {profileItem.channel || "1"} / SUB {profileItem.subtype || "1"}</small>
+                <small>{profileItem.ip} | CH {profileItem.channel || "1"} / SUB {profileItem.subtype || "1"} | {profileItem.remoteGatewayUrl ? "Remote" : "Local"}</small>
               </span>
               <button className="ghost-button" onClick={() => activateCameraProfile(profileItem)} type="button">Palaist</button>
               <button className="ghost-button danger" onClick={() => removeCameraProfile(profileItem.id)} type="button">Dzēst</button>
@@ -918,7 +1005,7 @@ export function Dashboard({
               <div className="panel-section">
                 <span className="eyebrow">Pēdējās aktivitātes</span>
                 <div className="event-feed compact">
-                  {activityItems.length ? activityItems.slice(0, 6).map((event) => (
+                  {activityItems.length ? activityItems.slice(0, maxActivityItems).map((event) => (
                     <div className="event-item" key={`${event.time}-${event.message}`}>
                       <strong>{event.time}</strong>
                       <span>{event.message}</span>
