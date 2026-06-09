@@ -43,6 +43,16 @@ create table if not exists public.client_profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.client_workspace_state (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  camera_profiles jsonb not null default '[]'::jsonb,
+  activity_items jsonb not null default '[]'::jsonb,
+  grid_layout jsonb not null default '{"active":false,"presetId":"2x2","slots":[]}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.sites (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -126,6 +136,7 @@ for each row execute function public.handle_new_auth_user();
 
 alter table public.client_email_registry enable row level security;
 alter table public.client_profiles enable row level security;
+alter table public.client_workspace_state enable row level security;
 alter table public.sites enable row level security;
 alter table public.cameras enable row level security;
 alter table public.recordings enable row level security;
@@ -157,6 +168,14 @@ using (auth.uid() = user_id or public.is_vizex_admin());
 drop policy if exists "Users can manage own profile" on public.client_profiles;
 create policy "Users can manage own profile"
 on public.client_profiles
+for all
+to authenticated
+using (auth.uid() = user_id or public.is_vizex_admin())
+with check (auth.uid() = user_id or public.is_vizex_admin());
+
+drop policy if exists "Users can manage own workspace state" on public.client_workspace_state;
+create policy "Users can manage own workspace state"
+on public.client_workspace_state
 for all
 to authenticated
 using (auth.uid() = user_id or public.is_vizex_admin())
@@ -257,6 +276,7 @@ with check (public.is_vizex_admin());
 
 grant select, insert, update on public.client_email_registry to authenticated;
 grant select, insert, update on public.client_profiles to authenticated;
+grant select, insert, update on public.client_workspace_state to authenticated;
 grant select on public.sites, public.cameras, public.recordings, public.events, public.app_settings to authenticated;
 grant insert, update, delete on public.sites, public.cameras, public.recordings, public.events, public.app_settings to authenticated;
 

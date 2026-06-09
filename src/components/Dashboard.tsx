@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
-import { readStore, writeStore } from "../lib/storage";
+import {
+  defaultGridLayoutState,
+  loadWorkspaceState,
+  normalizeCameraIp,
+  readWorkspaceCache,
+  saveWorkspaceState,
+  writeWorkspaceCache,
+  type ActivityItem,
+  type CameraProfile,
+  type GridLayoutState
+} from "../lib/clientWorkspace";
 import type { AppUser, Camera, EmailRegistryEntry, EventItem, Profile, Recording, Site, ViewName } from "../types";
 
 type DashboardProps = {
@@ -27,34 +37,6 @@ type CameraProfileDraft = {
   password: string;
   channel: string;
 };
-
-type CameraProfile = {
-  id: string;
-  code: string;
-  name: string;
-  ip: string;
-  username: string;
-  password: string;
-  channel: string;
-  subtype: string;
-  status: "Online";
-  createdAt: string;
-  lastStartedAt?: string;
-};
-
-type ActivityItem = EventItem & {
-  id: string;
-};
-
-type GridLayoutState = {
-  active: boolean;
-  presetId: string;
-  slots: Array<string | null>;
-};
-
-const cameraProfilesStoragePrefix = "vizex_camera_profiles_v1";
-const cameraActivityStoragePrefix = "vizex_camera_activity_v1";
-const gridLayoutStoragePrefix = "vizex_grid_layout_v1";
 
 const defaultCameraProfileDraft: CameraProfileDraft = {
   name: "",
@@ -130,10 +112,6 @@ function capacityPercent(used: number, limit: number) {
   return Math.min(100, Math.round((used / limit) * 100));
 }
 
-function scopedKey(prefix: string, user: AppUser) {
-  return `${prefix}:${user.email}`;
-}
-
 function currentTimeLabel() {
   return new Date().toLocaleTimeString("lv-LV", { hour: "2-digit", minute: "2-digit" });
 }
@@ -159,24 +137,6 @@ function buildDahuaGatewayUrl(profile: CameraProfile) {
   return `/api/dahua/mjpeg?${params.toString()}`;
 }
 
-function normalizeCameraIp(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-
-  try {
-    if (/^https?:\/\//i.test(trimmed)) {
-      return new URL(trimmed).hostname;
-    }
-  } catch {
-    return trimmed;
-  }
-
-  return trimmed
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/.*$/, "")
-    .replace(/:\d+$/, "");
-}
-
 function profileToCamera(profile: CameraProfile, index: number): Camera {
   return {
     id: profile.id,
@@ -199,17 +159,6 @@ function nextCameraCode(profiles: CameraProfile[]) {
   return `CAM-${String(nextNumber).padStart(2, "0")}`;
 }
 
-function readGridLayout(user: AppUser): GridLayoutState {
-  const saved = readStore<GridLayoutState | null>(scopedKey(gridLayoutStoragePrefix, user), null);
-  if (!saved) return { active: false, presetId: "2x2", slots: [] };
-  const presetExists = gridPresets.some((preset) => preset.id === saved.presetId);
-  return {
-    active: Boolean(saved.active),
-    presetId: presetExists ? saved.presetId : "2x2",
-    slots: Array.isArray(saved.slots) ? saved.slots : []
-  };
-}
-
 export function Dashboard({
   user,
   site,
@@ -224,20 +173,25 @@ export function Dashboard({
   onSaveProfile,
   onToast
 }: DashboardProps) {
+  const initialWorkspace = readWorkspaceCache(user);
   const [recordingQuery, setRecordingQuery] = useState("");
   const [dateFilter, setDateFilter] = useState("Šodien");
   const [profileDraft, setProfileDraft] = useState<Profile>(profile);
   const [activeServerId, setActiveServerId] = useState(serverCatalog[0].id);
   const [poweredOffCameraCodes, setPoweredOffCameraCodes] = useState<string[]>([]);
   const [gridPopupOpen, setGridPopupOpen] = useState(false);
-  const [customGridActive, setCustomGridActive] = useState(() => readGridLayout(user).active);
-  const [activeGridPresetId, setActiveGridPresetId] = useState(() => readGridLayout(user).presetId);
-  const [gridSlots, setGridSlots] = useState<Array<string | null>>(() => readGridLayout(user).slots);
-  const [cameraProfiles, setCameraProfiles] = useState<CameraProfile[]>(() => readStore<CameraProfile[]>(scopedKey(cameraProfilesStoragePrefix, user), []));
-  const [activityItems, setActivityItems] = useState<ActivityItem[]>(() => readStore<ActivityItem[]>(scopedKey(cameraActivityStoragePrefix, user), []));
+  const [customGridActive, setCustomGridActive] = useState(() => initialWorkspace.gridLayout.active);
+  const [activeGridPresetId, setActiveGridPresetId] = useState(() => initialWorkspace.gridLayout.presetId);
+  const [gridSlots, setGridSlots] = useState<Array<string | null>>(() => initialWorkspace.gridLayout.slots);
+  const [cameraProfiles, setCameraProfiles] = useState<CameraProfile[]>(() => initialWorkspace.cameraProfiles);
+  const [activityItems, setActivityItems] = useState<ActivityItem[]>(() => initialWorkspace.activityItems);
   const [cameraDraft, setCameraDraft] = useState<CameraProfileDraft>(defaultCameraProfileDraft);
   const [activeCameraCode, setActiveCameraCode] = useState(activeCameraFromApp.code);
   const [recordingCameraCode, setRecordingCameraCode] = useState(activeCameraFromApp.code);
+  const [workspaceSyncState, setWorkspaceSyncState] = useState<"loading" | "cloud" | "local">("loading");
+  const [workspaceSyncEnabled, setWorkspaceSyncEnabled] = useState(false);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const skipNextWorkspaceSyncRef = useRef(true);
 
   useEffect(() => {
     setProfileDraft(profile);
@@ -294,20 +248,81 @@ export function Dashboard({
   }, [managedCameras]);
 
   useEffect(() => {
-    writeStore(scopedKey(cameraProfilesStoragePrefix, user), cameraProfiles);
-  }, [cameraProfiles, user]);
+    let cancelled = false;
+
+    async function hydrateWorkspace() {
+      setWorkspaceReady(false);
+      setWorkspaceSyncState("loading");
+      skipNextWorkspaceSyncRef.current = true;
+
+      const localWorkspace = readWorkspaceCache(user);
+      const localGrid = localWorkspace.gridLayout ?? defaultGridLayoutState();
+      setCameraProfiles(localWorkspace.cameraProfiles);
+      setActivityItems(localWorkspace.activityItems);
+      setCustomGridActive(localGrid.active);
+      setActiveGridPresetId(localGrid.presetId);
+      setGridSlots(localGrid.slots);
+
+      const result = await loadWorkspaceState(user);
+      if (cancelled) return;
+
+      const workspaceGrid = result.state.gridLayout ?? defaultGridLayoutState();
+      skipNextWorkspaceSyncRef.current = true;
+      setCameraProfiles(result.state.cameraProfiles);
+      setActivityItems(result.state.activityItems);
+      setCustomGridActive(workspaceGrid.active);
+      setActiveGridPresetId(workspaceGrid.presetId);
+      setGridSlots(workspaceGrid.slots);
+      setWorkspaceSyncEnabled(result.syncEnabled);
+      setWorkspaceSyncState(result.syncEnabled && result.source === "cloud" ? "cloud" : "local");
+      setWorkspaceReady(true);
+    }
+
+    void hydrateWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
-    writeStore(scopedKey(cameraActivityStoragePrefix, user), activityItems.slice(0, 30));
-  }, [activityItems, user]);
+    const workspaceState = {
+      cameraProfiles,
+      activityItems: activityItems.slice(0, 30),
+      gridLayout: {
+        active: customGridActive,
+        presetId: activeGridPreset.id,
+        slots: gridSlots.slice(0, gridSlotCount)
+      } satisfies GridLayoutState
+    };
 
-  useEffect(() => {
-    writeStore<GridLayoutState>(scopedKey(gridLayoutStoragePrefix, user), {
-      active: customGridActive,
-      presetId: activeGridPreset.id,
-      slots: gridSlots.slice(0, gridSlotCount)
-    });
-  }, [activeGridPreset.id, customGridActive, gridSlotCount, gridSlots, user]);
+    writeWorkspaceCache(user, workspaceState);
+
+    if (!workspaceReady) return;
+    if (skipNextWorkspaceSyncRef.current) {
+      skipNextWorkspaceSyncRef.current = false;
+      return;
+    }
+    if (!workspaceSyncEnabled) return;
+
+    const timer = window.setTimeout(() => {
+      void saveWorkspaceState(user, workspaceState).then((saved) => {
+        setWorkspaceSyncState(saved ? "cloud" : "local");
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeGridPreset.id,
+    activityItems,
+    cameraProfiles,
+    customGridActive,
+    gridSlotCount,
+    gridSlots,
+    user,
+    workspaceReady,
+    workspaceSyncEnabled
+  ]);
 
   useEffect(() => {
     if (!cameraProfiles.length) {
@@ -491,7 +506,13 @@ export function Dashboard({
             <span className="eyebrow">Kameru pārvaldība</span>
             <h2>Pievienot Dahua kameru</h2>
           </div>
-          <span className="pill">{assignedCameraCount} profili</span>
+          <span className={`pill ${workspaceSyncState === "cloud" ? "" : "warning"}`}>
+            {workspaceSyncState === "loading"
+              ? "SinhronizÄ“..."
+              : workspaceSyncState === "cloud"
+                ? `${assignedCameraCount} profili | MÄkonÄ«`
+                : `${assignedCameraCount} profili | Tikai Å¡eit`}
+          </span>
         </div>
         <form className="camera-management-form" onSubmit={submitCameraProfile}>
           <label>
