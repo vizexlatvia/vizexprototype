@@ -11,6 +11,22 @@ import { readStore, writeStore } from "./lib/storage";
 import type { AppUser, AuthPanel, Camera, EmailRegistryEntry, EventItem, Profile, Recording, Site, ViewName } from "./types";
 
 type ProfileCache = Record<string, Profile>;
+type WorkspaceState = Record<string, {
+  activeView: ViewName;
+  activeCameraCode: string;
+}>;
+
+const localWorkspaceStateKey = "vizex_workspace_state";
+const viewNames: ViewName[] = ["overview", "live", "recordings", "servers", "profile", "admin"];
+
+function defaultViewForRole(role: AppUser["role"]): ViewName {
+  return role === "admin" ? "admin" : "overview";
+}
+
+function isValidViewForUser(view: string | undefined, user: AppUser): view is ViewName {
+  if (!viewNames.includes(view as ViewName)) return false;
+  return user.role === "admin" || view !== "admin";
+}
 
 function getRoleForEmail(email: string): AppUser["role"] {
   return normalizeEmail(email) === adminEmail ? "admin" : "client";
@@ -23,6 +39,15 @@ function toAppUser(user: User): AppUser {
 
 function emptyProfile(): Profile {
   return { company: "", contact: "", address: "" };
+}
+
+function readWorkspaceForUser(user: AppUser) {
+  const store = readStore<WorkspaceState>(localWorkspaceStateKey, {});
+  const saved = store[user.email];
+  return {
+    activeView: isValidViewForUser(saved?.activeView, user) ? saved.activeView : defaultViewForRole(user.role),
+    activeCameraCode: saved?.activeCameraCode || defaultCameras[0].code
+  };
 }
 
 function mapRecordings(rows: Array<{ camera_code: string; camera_name: string | null; detail: string; recorded_at: string; length_label: string }>): Recording[] {
@@ -69,6 +94,13 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(""), 3200);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!activeUser) return;
+    const store = readStore<WorkspaceState>(localWorkspaceStateKey, {});
+    store[activeUser.email] = { activeView, activeCameraCode };
+    writeStore(localWorkspaceStateKey, store);
+  }, [activeCameraCode, activeUser, activeView]);
 
   const syncEmailRegistry = useCallback(async (user: User, status = "active") => {
     const appUser = toAppUser(user);
@@ -119,7 +151,7 @@ export default function App() {
     return nextProfile;
   }, []);
 
-  const loadCloudProjectData = useCallback(async () => {
+  const loadCloudProjectData = useCallback(async (preferredCameraCode?: string) => {
     const { data: siteRows, error: siteError } = await supabase
       .from("sites")
       .select("id, name, address, status, is_default")
@@ -149,19 +181,22 @@ export default function App() {
 
     if (cameraRows?.length) {
       const nextCameras = cameraRows as Camera[];
+      const retainedCameraCode = preferredCameraCode || activeCameraCode;
       setCameras(nextCameras);
-      setActiveCameraCode(nextCameras[0].code);
+      setActiveCameraCode(nextCameras.some((camera) => camera.code === retainedCameraCode) ? retainedCameraCode : nextCameras[0].code);
     }
     if (recordingRows?.length) setRecordings(mapRecordings(recordingRows));
     if (eventRows?.length) setEvents(mapEvents(eventRows));
-  }, []);
+  }, [activeCameraCode]);
 
   const enterApp = useCallback(async (user: AppUser) => {
+    const savedWorkspace = readWorkspaceForUser(user);
     setActiveUser(user);
-    setActiveView(user.role === "admin" ? "admin" : "overview");
+    setActiveView(savedWorkspace.activeView);
+    setActiveCameraCode(savedWorkspace.activeCameraCode);
 
     try {
-      await loadCloudProjectData();
+      await loadCloudProjectData(savedWorkspace.activeCameraCode);
       showToast("Projekta dati ielādēti no Supabase");
     } catch (error) {
       showToast("Supabase dati vēl nav pilnībā gatavi, rādu lokālo demo skatu");

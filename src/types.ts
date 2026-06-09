@@ -1,5 +1,5 @@
 export type UserRole = "client" | "admin";
-export type ViewName = "overview" | "live" | "recordings" | "servers" | "configuration" | "profile" | "admin";
+export type ViewName = "overview" | "live" | "recordings" | "servers" | "profile" | "admin";
 export type AuthPanel = "login" | "register" | "recover";
 
 export type AppUser = {

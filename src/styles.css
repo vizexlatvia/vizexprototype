@@ -714,6 +714,8 @@ h1 {
 }
 
 .video-stage {
+  display: grid;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -1425,7 +1427,9 @@ h1 {
 }
 
 .stream-panel label,
-.archive-stream-panel label {
+.archive-stream-panel label,
+.dahua-gateway-panel label,
+.camera-management-form label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -1434,7 +1438,9 @@ h1 {
 }
 
 .stream-panel input,
-.archive-stream-panel select {
+.archive-stream-panel select,
+.dahua-gateway-panel input,
+.camera-management-form input {
   width: 100%;
   min-height: 42px;
   border: 1px solid rgba(222, 236, 246, 0.1);
@@ -1467,6 +1473,181 @@ h1 {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.stream-helper strong {
+  color: var(--ink);
+}
+
+.dahua-gateway-panel,
+.camera-management-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(222, 236, 246, 0.1);
+  border-radius: 8px;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.045), rgba(3, 6, 10, 0.68)),
+    radial-gradient(circle at 12% 0%, rgba(45, 224, 214, 0.13), transparent 28%);
+}
+
+.live-dahua-panel {
+  padding: 14px;
+}
+
+.camera-management-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.camera-management-head h2 {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.camera-management-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 0.62fr 0.95fr 0.95fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.camera-management-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.camera-management-note span {
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid rgba(222, 236, 246, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.camera-management-note strong {
+  color: var(--ink);
+}
+
+.camera-profile-list {
+  display: grid;
+  gap: 8px;
+}
+
+.camera-profile-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px;
+  border: 1px solid rgba(222, 236, 246, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.camera-profile-row.active {
+  border-color: rgba(67, 215, 243, 0.38);
+  background: rgba(67, 215, 243, 0.08);
+}
+
+.camera-profile-main {
+  min-width: 0;
+}
+
+.camera-profile-main strong,
+.camera-profile-main small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-profile-main strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.camera-profile-main small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.camera-empty-state {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px dashed rgba(222, 236, 246, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.camera-empty-state strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.camera-empty-state.compact {
+  margin-top: 10px;
+}
+
+.ghost-button.danger {
+  border-color: rgba(255, 95, 107, 0.24);
+  color: #ff9ca5;
+}
+
+.dahua-gateway-head {
+  display: grid;
+  gap: 3px;
+}
+
+.dahua-gateway-head span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dahua-gateway-head small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dahua-gateway-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dahua-action-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 180px) minmax(130px, 180px);
+  gap: 10px;
+}
+
+.dahua-action-row .ghost-button {
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
+}
+
+.primary-button.compact {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .ghost-button.disabled {
@@ -1798,6 +1979,18 @@ body.admin-mode .client-only {
   .video-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .dahua-gateway-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .camera-management-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .camera-management-form .primary-button {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 780px) {
@@ -1910,6 +2103,24 @@ body.admin-mode .client-only {
 
   .video-main {
     min-height: 300px;
+  }
+
+  .dahua-gateway-grid,
+  .dahua-action-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .camera-management-head {
+    display: grid;
+  }
+
+  .camera-management-form,
+  .camera-profile-row {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-management-form .primary-button {
+    grid-column: auto;
   }
 
   .admin-grid {

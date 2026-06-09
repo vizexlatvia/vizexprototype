@@ -3,15 +3,13 @@ import react from "@vitejs/plugin-react";
 import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Plugin } from "vite";
 
-function md5(value: string) {
+function md5(value) {
   return createHash("md5").update(value).digest("hex");
 }
 
-function parseDigestHeader(header: string) {
-  const values: Record<string, string> = {};
+function parseDigestHeader(header) {
+  const values = {};
   const source = header.replace(/^Digest\s+/i, "");
   const matches = source.matchAll(/([a-z0-9_-]+)=("([^"]*)"|([^,]*))/gi);
 
@@ -22,7 +20,7 @@ function parseDigestHeader(header: string) {
   return values;
 }
 
-function buildDigestAuthHeader(wwwAuthenticate: string, targetUrl: URL, username: string, password: string) {
+function buildDigestAuthHeader(wwwAuthenticate, targetUrl, username, password) {
   const challenge = parseDigestHeader(wwwAuthenticate);
   const realm = challenge.realm ?? "";
   const nonce = challenge.nonce ?? "";
@@ -37,14 +35,14 @@ function buildDigestAuthHeader(wwwAuthenticate: string, targetUrl: URL, username
   const baseHa1 = md5(`${username}:${realm}:${password}`);
   const ha1 = algorithm === "MD5-SESS" ? md5(`${baseHa1}:${nonce}:${cnonce}`) : baseHa1;
   const ha2 = md5(`${method}:${uri}`);
-  const response = qop ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`) : md5(`${ha1}:${nonce}:${ha2}`);
+  const authResponse = qop ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`) : md5(`${ha1}:${nonce}:${ha2}`);
 
   const parts = [
     `username="${username.replace(/"/g, '\\"')}"`,
     `realm="${realm}"`,
     `nonce="${nonce}"`,
     `uri="${uri}"`,
-    `response="${response}"`,
+    `response="${authResponse}"`,
     `algorithm=${algorithm}`
   ];
 
@@ -58,7 +56,7 @@ function buildDigestAuthHeader(wwwAuthenticate: string, targetUrl: URL, username
   return `Digest ${parts.join(", ")}`;
 }
 
-function isPrivateIpv4(value: string) {
+function isPrivateIpv4(value) {
   const parts = value.split(".").map((part) => Number(part));
   if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
 
@@ -66,8 +64,8 @@ function isPrivateIpv4(value: string) {
   return first === 10 || first === 127 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
 }
 
-function requestCamera(targetUrl: URL, authHeader?: string) {
-  return new Promise<IncomingMessage>((resolve, reject) => {
+function requestCamera(targetUrl, authHeader) {
+  return new Promise((resolve, reject) => {
     const client = targetUrl.protocol === "https:" ? https : http;
     const request = client.request(
       targetUrl,
@@ -85,7 +83,7 @@ function requestCamera(targetUrl: URL, authHeader?: string) {
   });
 }
 
-function pipeCameraResponse(cameraResponse: IncomingMessage, browserRequest: IncomingMessage, browserResponse: ServerResponse) {
+function pipeCameraResponse(cameraResponse, browserRequest, browserResponse) {
   browserRequest.on("close", () => {
     cameraResponse.destroy();
   });
@@ -99,7 +97,7 @@ function pipeCameraResponse(cameraResponse: IncomingMessage, browserRequest: Inc
   cameraResponse.pipe(browserResponse);
 }
 
-function dahuaLocalGatewayPlugin(): Plugin {
+function dahuaLocalGatewayPlugin() {
   return {
     name: "vizex-dahua-local-gateway",
     configureServer(server) {

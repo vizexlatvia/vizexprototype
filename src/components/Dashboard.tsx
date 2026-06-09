@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
+import { readStore, writeStore } from "../lib/storage";
 import type { AppUser, Camera, EmailRegistryEntry, EventItem, Profile, Recording, Site, ViewName } from "../types";
 
 type DashboardProps = {
@@ -19,24 +20,59 @@ type DashboardProps = {
   onToast: (message: string) => void;
 };
 
-type ConnectionMode = "ip" | "serial" | "p2p";
-
-type StreamSettings = {
-  mediaHost: string;
-  webrtcPort: string;
-  hlsPort: string;
-  paths: Record<string, string>;
-  directUrls: Record<string, string>;
+type CameraProfileDraft = {
+  name: string;
+  ip: string;
+  username: string;
+  password: string;
+  channel: string;
 };
 
-const streamSettingsStorageKey = "vizex_mediamtx_stream_settings";
+type CameraProfile = {
+  id: string;
+  code: string;
+  name: string;
+  ip: string;
+  username: string;
+  password: string;
+  channel: string;
+  subtype: string;
+  status: "Online";
+  createdAt: string;
+  lastStartedAt?: string;
+};
 
-const defaultStreamSettings: StreamSettings = {
-  mediaHost: "http://127.0.0.1",
-  webrtcPort: "8889",
-  hlsPort: "8888",
-  paths: {},
-  directUrls: {}
+type ActivityItem = EventItem & {
+  id: string;
+};
+
+type GridLayoutState = {
+  active: boolean;
+  presetId: string;
+  slots: Array<string | null>;
+};
+
+const cameraProfilesStoragePrefix = "vizex_camera_profiles_v1";
+const cameraActivityStoragePrefix = "vizex_camera_activity_v1";
+const gridLayoutStoragePrefix = "vizex_grid_layout_v1";
+
+const defaultCameraProfileDraft: CameraProfileDraft = {
+  name: "",
+  ip: "192.168.8.10",
+  username: "",
+  password: "",
+  channel: "1"
+};
+
+const emptyCamera: Camera = {
+  id: "empty-camera",
+  sort_order: 1,
+  code: "CAM-00",
+  name: "Nav pievienota kamera",
+  location: "Kameru pārvaldība",
+  model: "Dahua IP kamera",
+  status: "Gaida pievienošanu",
+  quality: "MJPEG"
 };
 
 const serverCatalog = [
@@ -62,28 +98,6 @@ const serverCatalog = [
   }
 ];
 
-const configurationDevices = [
-  { name: "Ieejas kamera", method: "IP", value: "192.168.1.42", server: "Riga Core Server", status: "Savienota" },
-  { name: "Stāvvietas kamera", method: "SN", value: "VZX-9A41-22KF", server: "Edge Backup Node", status: "Gaida pārbaudi" },
-  { name: "PTZ rampa", method: "P2P", value: "P2P-VZX-7042", server: "Riga Core Server", status: "Tunelis aktīvs" }
-];
-
-const overviewJournal = [
-  { time: "16:45", type: "Sistēma", message: "Klienta piekļuve aktīva", level: "ok" },
-  { time: "16:42", type: "Detekcija", message: "CAM-01: kustība pie galvenās ieejas", level: "ok" },
-  { time: "16:31", type: "Ierīce", message: "Stāvvietas kamera pievienota konfigurācijas rindai", level: "warning" },
-  { time: "15:58", type: "Kļūda", message: "CAM-06: īslaicīgs signāla kritums", level: "danger" },
-  { time: "15:44", type: "Arhīvs", message: "Video arhīvs sinhronizēts", level: "ok" },
-  { time: "15:20", type: "Paziņojums", message: "Sistēmas pārbaude pabeigta", level: "ok" }
-];
-
-const networkDevices = [
-  { name: "Rūteris", detail: "WAN savienojums stabils", status: "ok" },
-  { name: "NVR / lokālais mezgls", detail: "Atbildes laiks paaugstināts", status: "warning" },
-  { name: "CAM-06 Tehniskā telpa", detail: "Nav stabila signāla", status: "danger" },
-  { name: "VIZEX Cloud", detail: "Savienojums aktīvs", status: "ok" }
-];
-
 const gridPresets = [
   { id: "1x1", label: "1x1", detail: "1 kamera", rows: 1, columns: 1 },
   { id: "1x2", label: "1x2", detail: "2 kameras", rows: 1, columns: 2 },
@@ -103,13 +117,6 @@ function statusPill(status: string) {
   return <span className={`pill ${warning ? "warning" : ""}`}>{status}</span>;
 }
 
-function cameraSignalClass(status: string) {
-  const normalized = status.toLowerCase();
-  if (normalized.includes("online") || normalized.includes("savienota") || normalized.includes("active")) return "ok";
-  if (normalized.includes("uzman") || normalized.includes("gaida")) return "warning";
-  return "danger";
-}
-
 function cameraNumber(camera: Camera) {
   return String(camera.sort_order ?? camera.id ?? 1).padStart(2, "0");
 }
@@ -118,70 +125,99 @@ function cameraPing(camera: Camera) {
   return `${(Number(camera.sort_order ?? camera.id ?? 1) * 7) + 5} ms`;
 }
 
-function readStreamSettings(): StreamSettings {
-  try {
-    const stored = window.localStorage.getItem(streamSettingsStorageKey);
-    if (!stored) return defaultStreamSettings;
-    const parsed = JSON.parse(stored) as Partial<StreamSettings>;
-    return {
-      mediaHost: parsed.mediaHost || defaultStreamSettings.mediaHost,
-      webrtcPort: parsed.webrtcPort || defaultStreamSettings.webrtcPort,
-      hlsPort: parsed.hlsPort || defaultStreamSettings.hlsPort,
-      paths: parsed.paths || {},
-      directUrls: parsed.directUrls || {}
-    };
-  } catch {
-    return defaultStreamSettings;
-  }
-}
-
-function normalizeMediaHost(value: string) {
-  const trimmed = value.trim().replace(/\/+$/, "");
-  if (!trimmed) return defaultStreamSettings.mediaHost;
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-}
-
-function sanitizeStreamPath(value: string) {
-  return value.trim().replace(/^\/+/, "").replace(/\/+$/, "");
-}
-
-function encodeStreamPath(path: string) {
-  return sanitizeStreamPath(path).split("/").filter(Boolean).map(encodeURIComponent).join("/");
-}
-
-function buildMediaMtxEmbedUrl(settings: StreamSettings, protocol: "webrtc" | "hls", path: string) {
-  const encodedPath = encodeStreamPath(path);
-  if (!encodedPath) return "";
-
-  try {
-    const url = new URL(normalizeMediaHost(settings.mediaHost));
-    url.port = protocol === "webrtc" ? settings.webrtcPort : settings.hlsPort;
-    url.pathname = `/${encodedPath}`;
-    url.searchParams.set("muted", "true");
-    url.searchParams.set("autoplay", protocol === "webrtc" ? "true" : "false");
-    url.searchParams.set("playsInline", "true");
-    url.searchParams.set("controls", protocol === "webrtc" ? "false" : "true");
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
-
 function capacityPercent(used: number, limit: number) {
   if (!limit) return 0;
   return Math.min(100, Math.round((used / limit) * 100));
 }
 
+function scopedKey(prefix: string, user: AppUser) {
+  return `${prefix}:${user.email}`;
+}
+
+function currentTimeLabel() {
+  return new Date().toLocaleTimeString("lv-LV", { hour: "2-digit", minute: "2-digit" });
+}
+
+function createActivity(message: string): ActivityItem {
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    time: currentTimeLabel(),
+    message
+  };
+}
+
+function buildDahuaGatewayUrl(profile: CameraProfile) {
+  const params = new URLSearchParams({
+    ip: normalizeCameraIp(profile.ip),
+    port: "80",
+    user: profile.username,
+    pass: profile.password,
+    channel: profile.channel || "1",
+    subtype: profile.subtype || "1"
+  });
+
+  return `/api/dahua/mjpeg?${params.toString()}`;
+}
+
+function normalizeCameraIp(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      return new URL(trimmed).hostname;
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .replace(/:\d+$/, "");
+}
+
+function profileToCamera(profile: CameraProfile, index: number): Camera {
+  return {
+    id: profile.id,
+    sort_order: index + 1,
+    code: profile.code,
+    name: profile.name,
+    location: normalizeCameraIp(profile.ip),
+    model: "Dahua IP kamera",
+    status: profile.status,
+    quality: `CH ${profile.channel || "1"} / SUB ${profile.subtype || "1"}`
+  };
+}
+
+function nextCameraCode(profiles: CameraProfile[]) {
+  const nextNumber = profiles.reduce((max, profile) => {
+    const match = profile.code.match(/CAM-(\d+)/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0) + 1;
+
+  return `CAM-${String(nextNumber).padStart(2, "0")}`;
+}
+
+function readGridLayout(user: AppUser): GridLayoutState {
+  const saved = readStore<GridLayoutState | null>(scopedKey(gridLayoutStoragePrefix, user), null);
+  if (!saved) return { active: false, presetId: "2x2", slots: [] };
+  const presetExists = gridPresets.some((preset) => preset.id === saved.presetId);
+  return {
+    active: Boolean(saved.active),
+    presetId: presetExists ? saved.presetId : "2x2",
+    slots: Array.isArray(saved.slots) ? saved.slots : []
+  };
+}
+
 export function Dashboard({
   user,
   site,
-  cameras,
   recordings,
-  events,
   profile,
   emailRegistry,
   activeView,
-  activeCamera,
+  activeCamera: activeCameraFromApp,
   onViewChange,
   onCameraChange,
   onLogout,
@@ -192,27 +228,27 @@ export function Dashboard({
   const [dateFilter, setDateFilter] = useState("Šodien");
   const [profileDraft, setProfileDraft] = useState<Profile>(profile);
   const [activeServerId, setActiveServerId] = useState(serverCatalog[0].id);
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>("ip");
-  const [deviceValue, setDeviceValue] = useState("");
   const [poweredOffCameraCodes, setPoweredOffCameraCodes] = useState<string[]>([]);
   const [gridPopupOpen, setGridPopupOpen] = useState(false);
-  const [customGridActive, setCustomGridActive] = useState(false);
-  const [activeGridPresetId, setActiveGridPresetId] = useState("2x2");
-  const [gridSlots, setGridSlots] = useState<Array<string | null>>([]);
-  const [streamSettings, setStreamSettings] = useState<StreamSettings>(readStreamSettings);
-  const [recordingCameraCode, setRecordingCameraCode] = useState(activeCamera.code);
+  const [customGridActive, setCustomGridActive] = useState(() => readGridLayout(user).active);
+  const [activeGridPresetId, setActiveGridPresetId] = useState(() => readGridLayout(user).presetId);
+  const [gridSlots, setGridSlots] = useState<Array<string | null>>(() => readGridLayout(user).slots);
+  const [cameraProfiles, setCameraProfiles] = useState<CameraProfile[]>(() => readStore<CameraProfile[]>(scopedKey(cameraProfilesStoragePrefix, user), []));
+  const [activityItems, setActivityItems] = useState<ActivityItem[]>(() => readStore<ActivityItem[]>(scopedKey(cameraActivityStoragePrefix, user), []));
+  const [cameraDraft, setCameraDraft] = useState<CameraProfileDraft>(defaultCameraProfileDraft);
+  const [activeCameraCode, setActiveCameraCode] = useState(activeCameraFromApp.code);
+  const [recordingCameraCode, setRecordingCameraCode] = useState(activeCameraFromApp.code);
 
   useEffect(() => {
     setProfileDraft(profile);
   }, [profile]);
 
-  useEffect(() => {
-    window.localStorage.setItem(streamSettingsStorageKey, JSON.stringify(streamSettings));
-  }, [streamSettings]);
-
   const isAdmin = user.role === "admin";
-  const activeServer = serverCatalog.find((server) => server.id === activeServerId) ?? serverCatalog[0];
-  const assignedCameraCount = cameras.length;
+  const managedCameras = useMemo(
+    () => cameraProfiles.map((cameraProfile, index) => profileToCamera(cameraProfile, index)),
+    [cameraProfiles]
+  );
+  const assignedCameraCount = managedCameras.length;
   const activeGridPreset = gridPresets.find((preset) => preset.id === activeGridPresetId) ?? gridPresets[4];
   const gridSlotCount = activeGridPreset.rows * activeGridPreset.columns;
   const gridDensityClass = gridSlotCount > 36 ? "dense" : gridSlotCount > 16 ? "compact" : "";
@@ -220,28 +256,82 @@ export function Dashboard({
   const customGridSlots = useMemo(
     () => Array.from({ length: gridSlotCount }, (_, index) => {
       const cameraCode = gridSlots[index];
-      return cameraCode ? cameras.find((camera) => camera.code === cameraCode) ?? null : null;
+      return cameraCode ? managedCameras.find((camera) => camera.code === cameraCode) ?? null : null;
     }),
-    [cameras, gridSlotCount, gridSlots]
+    [gridSlotCount, gridSlots, managedCameras]
   );
   const filteredRecordings = useMemo(() => {
     const query = recordingQuery.toLowerCase();
-    return recordings.filter((item) => item.camera.toLowerCase().includes(query));
-  }, [recordingQuery, recordings]);
-  const activeRecordingCamera = cameras.find((camera) => camera.code === recordingCameraCode) ?? activeCamera;
-  const activeCameraDirectUrl = streamSettings.directUrls[activeCamera.code] ?? "";
-  const recordingCameraDirectUrl = streamSettings.directUrls[activeRecordingCamera.code] ?? "";
-  const activeCameraStreamPath = streamSettings.paths[activeCamera.code] ?? "";
-  const recordingCameraStreamPath = streamSettings.paths[activeRecordingCamera.code] ?? "";
-  const activeCameraWebRtcUrl = buildMediaMtxEmbedUrl(streamSettings, "webrtc", activeCameraStreamPath);
-  const activeRecordingHlsUrl = buildMediaMtxEmbedUrl(streamSettings, "hls", recordingCameraStreamPath);
+    if (!managedCameras.length) return [];
+    return recordings.filter((item) => (
+      managedCameras.some((camera) => item.camera.includes(camera.code)) && item.camera.toLowerCase().includes(query)
+    ));
+  }, [managedCameras, recordingQuery, recordings]);
+  const activeCamera = managedCameras.find((camera) => camera.code === activeCameraCode) ?? managedCameras[0] ?? emptyCamera;
+  const activeCameraProfile = cameraProfiles.find((cameraProfile) => cameraProfile.code === activeCamera.code) ?? null;
+  const activeRecordingCamera = managedCameras.find((camera) => camera.code === recordingCameraCode) ?? activeCamera;
+  const activeRecordingCameraProfile = cameraProfiles.find((cameraProfile) => cameraProfile.code === activeRecordingCamera.code) ?? null;
+  const activeCameraDirectUrl = activeCameraProfile ? buildDahuaGatewayUrl(activeCameraProfile) : "";
+  const recordingCameraDirectUrl = activeRecordingCameraProfile ? buildDahuaGatewayUrl(activeRecordingCameraProfile) : "";
+  const cameraCodes = useMemo(() => managedCameras.map((camera) => camera.code), [managedCameras]);
+  const overviewJournalItems = useMemo(() => (
+    activityItems.length
+      ? activityItems.slice(0, 6).map((item) => ({ time: item.time, type: "Notikums", message: item.message, level: "ok" }))
+      : [{ time: currentTimeLabel(), type: "Sistēma", message: "Kameru pārvaldība gatava. Pievieno pirmo kameru.", level: "warning" }]
+  ), [activityItems]);
+  const networkDevices = useMemo(() => {
+    const cameraRows = managedCameras.slice(0, 5).map((camera) => ({
+      name: `${camera.code} ${camera.name}`,
+      detail: `${camera.location} | ${camera.status}`,
+      status: camera.status === "Online" ? "ok" : "warning"
+    }));
+
+    return [
+      { name: "Lokālais tīkls", detail: "Kameru savienojumi tiek pārbaudīti no šī datora", status: "ok" },
+      ...(cameraRows.length ? cameraRows : [{ name: "Kameras", detail: "Nav pievienotu kameru", status: "warning" }]),
+      { name: "VIZEX platforma", detail: "Kameru profili sinhronizēti lokāli", status: "ok" }
+    ];
+  }, [managedCameras]);
+
+  useEffect(() => {
+    writeStore(scopedKey(cameraProfilesStoragePrefix, user), cameraProfiles);
+  }, [cameraProfiles, user]);
+
+  useEffect(() => {
+    writeStore(scopedKey(cameraActivityStoragePrefix, user), activityItems.slice(0, 30));
+  }, [activityItems, user]);
+
+  useEffect(() => {
+    writeStore<GridLayoutState>(scopedKey(gridLayoutStoragePrefix, user), {
+      active: customGridActive,
+      presetId: activeGridPreset.id,
+      slots: gridSlots.slice(0, gridSlotCount)
+    });
+  }, [activeGridPreset.id, customGridActive, gridSlotCount, gridSlots, user]);
+
+  useEffect(() => {
+    if (!cameraProfiles.length) {
+      setGridSlots((current) => current.map(() => null));
+      return;
+    }
+
+    if (!cameraCodes.includes(activeCameraCode)) {
+      setActiveCameraCode(cameraCodes[0]);
+      onCameraChange(managedCameras[0]);
+    }
+
+    if (!cameraCodes.includes(recordingCameraCode)) {
+      setRecordingCameraCode(cameraCodes[0]);
+    }
+
+    setGridSlots((current) => current.map((code) => (code && cameraCodes.includes(code) ? code : null)));
+  }, [activeCameraCode, cameraCodes, cameraProfiles.length, managedCameras, onCameraChange, recordingCameraCode]);
 
   const navItems: Array<{ view: ViewName; label: string; caption: string }> = [
     { view: "overview", label: "Pārskats", caption: "Sistēmas statuss" },
     { view: "live", label: "Tiešraide", caption: "Video režģis" },
     { view: "recordings", label: "Ieraksti", caption: "Video arhīvs" },
     { view: "servers", label: "Serveri", caption: "Kvotas un arhīvs" },
-    { view: "configuration", label: "Konfigurācija", caption: "IP, SN un P2P" },
     { view: "profile", label: "Profils", caption: "Klienta dati" }
   ];
 
@@ -258,19 +348,24 @@ export function Dashboard({
     setProfileDraft((current) => ({ ...current, [field]: value }));
   }
 
-  function submitDevice(event: FormEvent) {
-    event.preventDefault();
-    const modeLabel = connectionMode === "ip" ? "IP adrese" : connectionMode === "serial" ? "sērijas numurs" : "P2P ID";
-    onToast(`Ierīces pievienošana pēc ${modeLabel}: ${deviceValue || "nav ievadīts"}`);
+  function appendActivity(message: string) {
+    const nextActivity = createActivity(message);
+    setActivityItems((current) => [nextActivity, ...current].slice(0, 30));
+  }
+
+  function selectCamera(camera: Camera) {
+    setActiveCameraCode(camera.code);
+    onCameraChange(camera);
   }
 
   function selectGridPreset(preset: typeof gridPresets[number]) {
     const slotCount = preset.rows * preset.columns;
     setActiveGridPresetId(preset.id);
-    setGridSlots(Array.from({ length: slotCount }, () => null));
+    setGridSlots((current) => Array.from({ length: slotCount }, (_, index) => current[index] ?? null));
     setCustomGridActive(true);
     setGridPopupOpen(false);
-    onToast(`Režģis ${preset.label} izvēlēts`);
+    appendActivity(`Režģis ${preset.label} saglabāts`);
+    onToast(`Režģis ${preset.label} izvēlēts un saglabāts`);
   }
 
   function startCameraDrag(event: DragEvent<HTMLButtonElement>, camera: Camera) {
@@ -279,7 +374,7 @@ export function Dashboard({
   }
 
   function assignCameraToGrid(slotIndex: number, cameraCode: string) {
-    const nextCamera = cameras.find((camera) => camera.code === cameraCode);
+    const nextCamera = managedCameras.find((camera) => camera.code === cameraCode);
     if (!nextCamera) return;
 
     setGridSlots((current) => {
@@ -287,7 +382,8 @@ export function Dashboard({
       nextSlots[slotIndex] = nextCamera.code;
       return nextSlots;
     });
-    onCameraChange(nextCamera);
+    selectCamera(nextCamera);
+    appendActivity(`${nextCamera.code}: kamera ievietota režģa logā ${String(slotIndex + 1).padStart(2, "0")}`);
   }
 
   function handleGridDrop(event: DragEvent<HTMLDivElement>, slotIndex: number) {
@@ -307,43 +403,185 @@ export function Dashboard({
     setPoweredOffCameraCodes((current) => (
       nextPoweredOff ? [...current, camera.code] : current.filter((code) => code !== camera.code)
     ));
+    appendActivity(`${camera.code}: kamera ${nextPoweredOff ? "izslēgta" : "ieslēgta"}`);
     onToast(`${camera.code} ${nextPoweredOff ? "izslēgta" : "ieslēgta"} prototipa skatā`);
   }
 
-  function updateStreamSetting(field: keyof Omit<StreamSettings, "paths">, value: string) {
-    setStreamSettings((current) => ({ ...current, [field]: value }));
-  }
-
-  function updateCameraStreamPath(camera: Camera, value: string) {
-    setStreamSettings((current) => ({
-      ...current,
-      paths: {
-        ...current.paths,
-        [camera.code]: sanitizeStreamPath(value)
-      }
-    }));
-  }
-
-  function updateCameraDirectUrl(camera: Camera, value: string) {
-    setStreamSettings((current) => ({
-      ...current,
-      directUrls: {
-        ...current.directUrls,
-        [camera.code]: value.trim()
-      }
-    }));
-  }
-
   function getCameraDirectUrl(camera: Camera) {
-    return streamSettings.directUrls[camera.code] ?? "";
+    const cameraProfile = cameraProfiles.find((profileItem) => profileItem.code === camera.code);
+    return cameraProfile ? buildDahuaGatewayUrl(cameraProfile) : "";
   }
 
-  function getCameraWebRtcUrl(camera: Camera) {
-    return buildMediaMtxEmbedUrl(streamSettings, "webrtc", streamSettings.paths[camera.code] ?? "");
+  function updateCameraDraft(field: keyof CameraProfileDraft, value: string) {
+    setCameraDraft((current) => ({ ...current, [field]: value }));
   }
 
-  function getCameraHlsUrl(camera: Camera) {
-    return buildMediaMtxEmbedUrl(streamSettings, "hls", streamSettings.paths[camera.code] ?? "");
+  function submitCameraProfile(event: FormEvent) {
+    event.preventDefault();
+
+    const name = cameraDraft.name.trim();
+    const ip = normalizeCameraIp(cameraDraft.ip);
+    const username = cameraDraft.username.trim();
+    const password = cameraDraft.password;
+    const channel = cameraDraft.channel.trim() || "1";
+
+    if (!name || !ip || !username || !password) {
+      onToast("Aizpildi nosaukumu, IP, lietotāju un paroli");
+      return;
+    }
+
+    const duplicateProfile = cameraProfiles.find((profileItem) => profileItem.ip === ip && (profileItem.channel || "1") === channel);
+    if (duplicateProfile) {
+      onToast(`${duplicateProfile.code} jau izmanto IP ${ip} un kanālu ${channel}`);
+      return;
+    }
+
+    const code = nextCameraCode(cameraProfiles);
+    const profileItem: CameraProfile = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      code,
+      name,
+      ip,
+      username,
+      password,
+      channel,
+      subtype: "1",
+      status: "Online",
+      createdAt: new Date().toISOString(),
+      lastStartedAt: new Date().toISOString()
+    };
+    const nextCamera = profileToCamera(profileItem, cameraProfiles.length);
+
+    setCameraProfiles((current) => [...current, profileItem]);
+    setCameraDraft(defaultCameraProfileDraft);
+    setActiveCameraCode(code);
+    setRecordingCameraCode(code);
+    onCameraChange(nextCamera);
+    appendActivity(`${code}: ${name} pievienota kameru pārvaldībā, kanāls ${channel}`);
+    onToast(`${code} pievienota un pieslēgta kanālam ${channel}`);
+  }
+
+  function activateCameraProfile(profileItem: CameraProfile) {
+    const camera = managedCameras.find((item) => item.code === profileItem.code) ?? profileToCamera(profileItem, cameraProfiles.indexOf(profileItem));
+    const now = new Date().toISOString();
+    setCameraProfiles((current) => current.map((item) => (
+      item.id === profileItem.id ? { ...item, lastStartedAt: now, status: "Online" } : item
+    )));
+    selectCamera(camera);
+    appendActivity(`${profileItem.code}: tiešraide palaista`);
+    onToast(`${profileItem.code} tiešraide palaista`);
+  }
+
+  function removeCameraProfile(profileId: string) {
+    const removedProfile = cameraProfiles.find((item) => item.id === profileId);
+    if (!removedProfile) return;
+
+    setCameraProfiles((current) => current.filter((item) => item.id !== profileId));
+    setGridSlots((current) => current.map((code) => (code === removedProfile.code ? null : code)));
+    setPoweredOffCameraCodes((current) => current.filter((code) => code !== removedProfile.code));
+    appendActivity(`${removedProfile.code}: ${removedProfile.name} noņemta no kameru pārvaldības`);
+    onToast(`${removedProfile.code} noņemta`);
+  }
+
+  function renderCameraManagementPanel() {
+    return (
+      <div className="camera-management-panel live-dahua-panel">
+        <div className="camera-management-head">
+          <div>
+            <span className="eyebrow">Kameru pārvaldība</span>
+            <h2>Pievienot Dahua kameru</h2>
+          </div>
+          <span className="pill">{assignedCameraCount} profili</span>
+        </div>
+        <form className="camera-management-form" onSubmit={submitCameraProfile}>
+          <label>
+            Nosaukums
+            <input
+              value={cameraDraft.name}
+              onChange={(event) => updateCameraDraft("name", event.target.value)}
+              placeholder="Ieeja, noliktava, pagalms"
+              type="text"
+            />
+          </label>
+          <label>
+            IP
+            <input
+              value={cameraDraft.ip}
+              onChange={(event) => updateCameraDraft("ip", event.target.value)}
+              onBlur={(event) => updateCameraDraft("ip", normalizeCameraIp(event.target.value))}
+              placeholder="192.168.8.10"
+              type="text"
+            />
+          </label>
+          <label>
+            Kanāls
+            <input
+              value={cameraDraft.channel}
+              onChange={(event) => updateCameraDraft("channel", event.target.value.replace(/\D/g, ""))}
+              placeholder="1"
+              type="text"
+            />
+          </label>
+          <label>
+            Lietotājs
+            <input
+              value={cameraDraft.username}
+              onChange={(event) => updateCameraDraft("username", event.target.value)}
+              placeholder="admin"
+              type="text"
+            />
+          </label>
+          <label>
+            Parole
+            <input
+              value={cameraDraft.password}
+              onChange={(event) => updateCameraDraft("password", event.target.value)}
+              placeholder="Kameras parole"
+              type="password"
+            />
+          </label>
+          <button className="primary-button compact" type="submit">Pievienot kameru</button>
+        </form>
+        <div className="camera-management-note">
+          <span>Channel: <strong>izvēlies formā</strong></span>
+          <span>Subtype: <strong>1</strong></span>
+          <span>HTTP ports: <strong>80</strong></span>
+        </div>
+        <div className="camera-profile-list">
+          {cameraProfiles.length ? cameraProfiles.map((profileItem) => (
+            <div className={`camera-profile-row ${profileItem.code === activeCamera.code ? "active" : ""}`} key={profileItem.id}>
+              <span className="camera-number">{profileItem.code.replace("CAM-", "")}</span>
+              <span className="camera-profile-main">
+                <strong>{profileItem.code} {profileItem.name}</strong>
+                <small>{profileItem.ip} | CH {profileItem.channel || "1"} / SUB {profileItem.subtype || "1"}</small>
+              </span>
+              <button className="ghost-button" onClick={() => activateCameraProfile(profileItem)} type="button">Palaist</button>
+              <button className="ghost-button danger" onClick={() => removeCameraProfile(profileItem.id)} type="button">Dzēst</button>
+            </div>
+          )) : (
+            <div className="camera-empty-state">
+              <strong>Nav pievienotu kameru</strong>
+              <span>Pievieno pirmo Dahua kameru, lai tā parādītos sarakstā, režģī un notikumu žurnālā.</span>
+            </div>
+          )}
+        </div>
+        <div className="dahua-action-row">
+          <a className={`ghost-button ${activeCameraDirectUrl ? "" : "disabled"}`} href={activeCameraDirectUrl || undefined} rel="noreferrer" target="_blank">
+            Atvērt stream
+          </a>
+          <button
+            className="ghost-button"
+            onClick={() => {
+              if (activeCameraProfile) activateCameraProfile(activeCameraProfile);
+            }}
+            disabled={!activeCameraProfile}
+            type="button"
+          >
+            Atsvaidzināt tiešraidi
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -384,7 +622,7 @@ export function Dashboard({
         <div className="ai-panel service-panel">
           <span className="eyebrow">Platformas statuss</span>
           <strong>Sistēma darbojas</strong>
-          <p>Pārskatā redzams notikumu žurnāls un tīkla statuss. Detalizēta konfigurācija atrodas atsevišķā sadaļā.</p>
+          <p>Pārskatā redzams notikumu žurnāls un tīkla statuss. Kameru pārvaldība un tiešraide atrodas vienā darba skatā.</p>
         </div>
       </aside>
 
@@ -395,8 +633,8 @@ export function Dashboard({
               <span className="eyebrow">VIZEX platforma</span>
               <h1>{isAdmin ? "Admin darba vide" : "Jūsu sistēmas pārskats"}</h1>
             </div>
-            <button className="primary-button" onClick={() => onViewChange("configuration")} type="button">
-              Pievienot ierīci
+            <button className="primary-button" onClick={() => onViewChange("live")} type="button">
+              Atvērt tiešraidi
             </button>
           </div>
 
@@ -428,7 +666,7 @@ export function Dashboard({
                 <button className="ghost-button" onClick={() => onToast("Notikumu filtri būs nākamajā prototipa solī")} type="button">Filtri</button>
               </div>
               <div className="journal-feed">
-                {overviewJournal.map((event) => (
+                {overviewJournalItems.map((event) => (
                   <div className={`journal-item ${event.level}`} key={`${event.time}-${event.message}`}>
                     <span className="journal-time">{event.time}</span>
                     <span>
@@ -533,7 +771,6 @@ export function Dashboard({
                   {customGridSlots.map((camera, index) => {
                     const poweredOff = camera ? isCameraPoweredOff(camera) : false;
                     const cameraDirectUrl = camera ? getCameraDirectUrl(camera) : "";
-                    const cameraWebRtcUrl = camera ? getCameraWebRtcUrl(camera) : "";
                     return (
                       <div
                         className={`grid-slot ${camera ? "filled" : ""} ${poweredOff ? "offline" : ""}`}
@@ -549,15 +786,6 @@ export function Dashboard({
                           <>
                             {cameraDirectUrl && !poweredOff && (
                               <img className="stream-frame mjpeg-frame" src={cameraDirectUrl} alt={`${camera.code} direct stream`} />
-                            )}
-                            {!cameraDirectUrl && cameraWebRtcUrl && !poweredOff && (
-                              <iframe
-                                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                                className="stream-frame"
-                                scrolling="no"
-                                src={cameraWebRtcUrl}
-                                title={`${camera.code} WebRTC`}
-                              />
                             )}
                             <div className="video-noise" />
                             <div className="tile-actions">
@@ -577,7 +805,7 @@ export function Dashboard({
                                 className="tile-gear"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  onToast(`${camera.code} konfigurācijas logs būs nākamajā solī`);
+                                  onToast(`${camera.code} iestatījumu logs būs nākamajā solī`);
                                 }}
                                 type="button"
                               >
@@ -605,35 +833,28 @@ export function Dashboard({
                   {activeCameraDirectUrl && !isCameraPoweredOff(activeCamera) && (
                     <img className="stream-frame mjpeg-frame" src={activeCameraDirectUrl} alt={`${activeCamera.code} direct stream`} />
                   )}
-                  {!activeCameraDirectUrl && activeCameraWebRtcUrl && !isCameraPoweredOff(activeCamera) && (
-                    <iframe
-                      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                      className="stream-frame"
-                      scrolling="no"
-                      src={activeCameraWebRtcUrl}
-                      title={`${activeCamera.code} WebRTC`}
-                    />
-                  )}
                   <div className="video-noise" />
                   <div className="video-reticle" />
-                  <div className="tile-actions main-actions">
-                    <button
-                      aria-label={`${activeCamera.code} ieslēgt vai izslēgt`}
-                      className={`tile-power ${isCameraPoweredOff(activeCamera) ? "off" : ""}`}
-                      onClick={() => toggleCameraPower(activeCamera)}
-                      type="button"
-                    >
-                      <span className="power-icon" aria-hidden="true" />
-                    </button>
-                    <button
-                      aria-label={`${activeCamera.code} iestatījumi`}
-                      className="tile-gear"
-                      onClick={() => onToast(`${activeCamera.code} konfigurācijas logs būs nākamajā solī`)}
-                      type="button"
-                    >
-                      <span aria-hidden="true">⚙</span>
-                    </button>
-                  </div>
+                  {activeCameraProfile && (
+                    <div className="tile-actions main-actions">
+                      <button
+                        aria-label={`${activeCamera.code} ieslēgt vai izslēgt`}
+                        className={`tile-power ${isCameraPoweredOff(activeCamera) ? "off" : ""}`}
+                        onClick={() => toggleCameraPower(activeCamera)}
+                        type="button"
+                      >
+                        <span className="power-icon" aria-hidden="true" />
+                      </button>
+                      <button
+                        aria-label={`${activeCamera.code} iestatījumi`}
+                        className="tile-gear"
+                        onClick={() => onToast(`${activeCamera.code} iestatījumu logs būs nākamajā solī`)}
+                        type="button"
+                      >
+                        <span aria-hidden="true">⚙</span>
+                      </button>
+                    </div>
+                  )}
                   <span className="tile-camera-label main-label">
                     <strong>{cameraNumber(activeCamera)} {activeCamera.name}</strong>
                     <small>{activeCamera.code} | {activeCamera.model}</small>
@@ -641,6 +862,7 @@ export function Dashboard({
                   <span className="tile-ping main-ping">{cameraPing(activeCamera)}</span>
                 </div>
               )}
+              {renderCameraManagementPanel()}
             </div>
 
             <aside className="details-panel">
@@ -648,12 +870,12 @@ export function Dashboard({
                 <span className="eyebrow">Kameras</span>
                 <h2>Kameru saraksts</h2>
                 <div className="camera-list">
-                  {cameras.map((camera) => (
+                  {managedCameras.length ? managedCameras.map((camera) => (
                     <button
                       className={`camera-button ${camera.code === activeCamera.code ? "active" : ""}`}
                       draggable
                       key={camera.code}
-                      onClick={() => onCameraChange(camera)}
+                      onClick={() => selectCamera(camera)}
                       onDragStart={(event) => startCameraDrag(event, camera)}
                       type="button"
                     >
@@ -664,90 +886,28 @@ export function Dashboard({
                       </span>
                       {statusPill(camera.status)}
                     </button>
-                  ))}
-                </div>
-              </div>
-              <div className="panel-section">
-                <span className="eyebrow">Aktīvā kamera</span>
-                <div className="camera-detail-list">
-                  <span><strong>Nosaukums</strong>{activeCamera.name}</span>
-                  <span><strong>Lokācija</strong>{activeCamera.location}</span>
-                  <span><strong>Modelis</strong>{activeCamera.model}</span>
-                  <span><strong>Statuss</strong>{activeCamera.status}</span>
-                </div>
-              </div>
-              <div className="panel-section stream-panel">
-                <span className="eyebrow">Vienkāršais tests</span>
-                <label>
-                  {activeCamera.code} Direct MJPEG/HTTP URL
-                  <input
-                    value={activeCameraDirectUrl}
-                    onChange={(event) => updateCameraDirectUrl(activeCamera, event.target.value)}
-                    placeholder="http://192.168.1.20:8080/video"
-                    type="text"
-                  />
-                </label>
-                <p className="stream-helper">Ātrākais tests: telefona IP kamera vai kameras MJPEG links. Ja šis ir aizpildīts, tas tiek rādīts pirms MediaMTX.</p>
-              </div>
-              <div className="panel-section stream-panel">
-                <span className="eyebrow">MediaMTX rezerves variants</span>
-                <label>
-                  Serveris
-                  <input
-                    value={streamSettings.mediaHost}
-                    onChange={(event) => updateStreamSetting("mediaHost", event.target.value)}
-                    onBlur={() => updateStreamSetting("mediaHost", normalizeMediaHost(streamSettings.mediaHost))}
-                    placeholder="http://127.0.0.1"
-                    type="text"
-                  />
-                </label>
-                <div className="stream-port-grid">
-                  <label>
-                    WebRTC
-                    <input
-                      value={streamSettings.webrtcPort}
-                      onChange={(event) => updateStreamSetting("webrtcPort", event.target.value.replace(/\D/g, ""))}
-                      placeholder="8889"
-                      type="text"
-                    />
-                  </label>
-                  <label>
-                    HLS
-                    <input
-                      value={streamSettings.hlsPort}
-                      onChange={(event) => updateStreamSetting("hlsPort", event.target.value.replace(/\D/g, ""))}
-                      placeholder="8888"
-                      type="text"
-                    />
-                  </label>
-                </div>
-                <label>
-                  {activeCamera.code} path
-                  <input
-                    value={activeCameraStreamPath}
-                    onChange={(event) => updateCameraStreamPath(activeCamera, event.target.value)}
-                    placeholder="mystream"
-                    type="text"
-                  />
-                </label>
-                <div className="stream-link-row">
-                  <a className={`ghost-button ${activeCameraWebRtcUrl ? "" : "disabled"}`} href={activeCameraWebRtcUrl || undefined} rel="noreferrer" target="_blank">
-                    WebRTC tests
-                  </a>
-                  <a className={`ghost-button ${getCameraHlsUrl(activeCamera) ? "" : "disabled"}`} href={getCameraHlsUrl(activeCamera) || undefined} rel="noreferrer" target="_blank">
-                    HLS tests
-                  </a>
+                  )) : (
+                    <div className="camera-empty-state compact">
+                      <strong>Nav pievienotu kameru</strong>
+                      <span>Pievieno kameru zem video laukuma.</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="panel-section">
                 <span className="eyebrow">Pēdējās aktivitātes</span>
                 <div className="event-feed compact">
-                  {events.slice(0, 4).map((event) => (
+                  {activityItems.length ? activityItems.slice(0, 6).map((event) => (
                     <div className="event-item" key={`${event.time}-${event.message}`}>
                       <strong>{event.time}</strong>
                       <span>{event.message}</span>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="camera-empty-state compact">
+                      <strong>Notikumu vēl nav</strong>
+                      <span>Kameras pievienošana, palaišana un režģa darbības parādīsies šeit.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </aside>
@@ -792,32 +952,24 @@ export function Dashboard({
                     <span className="eyebrow">Stream pārbaude</span>
                     <h2>Stream pārbaude</h2>
                   </div>
-                  {(recordingCameraDirectUrl || recordingCameraStreamPath) && <span className="pill">{activeRecordingCamera.code}</span>}
+                  {recordingCameraDirectUrl && <span className="pill">{activeRecordingCamera.code}</span>}
                 </div>
                 <label>
                   Kamera
                   <select value={activeRecordingCamera.code} onChange={(event) => setRecordingCameraCode(event.target.value)}>
-                    {cameras.map((camera) => <option key={camera.code} value={camera.code}>{camera.code} - {camera.name}</option>)}
+                    {managedCameras.length ? managedCameras.map((camera) => <option key={camera.code} value={camera.code}>{camera.code} - {camera.name}</option>) : (
+                      <option value={emptyCamera.code}>Nav pievienotu kameru</option>
+                    )}
                   </select>
                 </label>
                 {recordingCameraDirectUrl ? (
                   <div className="archive-frame-wrap">
                     <img className="archive-frame mjpeg-frame" src={recordingCameraDirectUrl} alt={`${activeRecordingCamera.code} direct stream`} />
                   </div>
-                ) : activeRecordingHlsUrl ? (
-                  <div className="archive-frame-wrap">
-                    <iframe
-                      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                      className="archive-frame"
-                      scrolling="no"
-                      src={activeRecordingHlsUrl}
-                      title={`${activeRecordingCamera.code} HLS`}
-                    />
-                  </div>
                 ) : (
                   <div className="archive-empty">
                     <strong>Nav piesaistīta plūsma</strong>
-                    <span>{activeRecordingCamera.code} Direct URL vai MediaMTX path pievieno Tiešraide sadaļā.</span>
+                    <span>{activeRecordingCamera.code} lokālo Dahua testu palaid Tiešraides sadaļā.</span>
                   </div>
                 )}
               </div>
@@ -865,84 +1017,10 @@ export function Dashboard({
                     <span><strong>{server.latency}</strong><small>Latence</small></span>
                   </div>
                   <span className="capacity-bar"><i style={{ width: `${percent}%` }} /></span>
-                  <button className="ghost-button" onClick={() => setActiveServerId(server.id)} type="button">Izvēlēties konfigurācijai</button>
+                  <button className="ghost-button" onClick={() => setActiveServerId(server.id)} type="button">Izvēlēties serveri</button>
                 </section>
               );
             })}
-          </div>
-        </section>
-
-        <section className={`view ${activeView === "configuration" ? "active" : ""}`}>
-          <div className="section-head dashboard-head">
-            <div>
-              <span className="eyebrow">Ierīču konfigurācija</span>
-              <h1>Pievienot kameru vai ierīci</h1>
-            </div>
-            <button className="primary-button" onClick={() => onToast("Web konfigurācijas logs tiks pieslēgts nākamajā integrācijas solī")} type="button">
-              Atvērt web konfigurāciju
-            </button>
-          </div>
-
-          <div className="configuration-layout">
-            <form className="config-panel" onSubmit={submitDevice}>
-              <span className="eyebrow">Savienojuma veids</span>
-              <div className="mode-tabs">
-                {[
-                  ["ip", "IP adrese"],
-                  ["serial", "Sērijas numurs"],
-                  ["p2p", "P2P ID"]
-                ].map(([mode, label]) => (
-                  <button
-                    className={`mode-tab ${connectionMode === mode ? "active" : ""}`}
-                    key={mode}
-                    onClick={() => setConnectionMode(mode as ConnectionMode)}
-                    type="button"
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <label>
-                Serveris
-                <select value={activeServerId} onChange={(event) => setActiveServerId(event.target.value)}>
-                  {serverCatalog.map((server) => <option key={server.id} value={server.id}>{server.name}</option>)}
-                </select>
-              </label>
-              <label>
-                {connectionMode === "ip" ? "Ierīces IP adrese" : connectionMode === "serial" ? "Ierīces sērijas numurs" : "P2P identifikators"}
-                <input
-                  value={deviceValue}
-                  onChange={(event) => setDeviceValue(event.target.value)}
-                  placeholder={connectionMode === "ip" ? "192.168.1.100" : connectionMode === "serial" ? "VZX-SN-0000" : "P2P-VZX-0000"}
-                  type="text"
-                />
-              </label>
-              <button className="primary-button" type="submit">Pārbaudīt savienojumu</button>
-
-              <div className="config-steps">
-                <span>1. Izvēlies serveri</span>
-                <span>2. Ievadi IP, SN vai P2P ID</span>
-                <span>3. Pārbaudi web piekļuvi</span>
-                <span>4. Pievieno kameru klienta kontam</span>
-              </div>
-            </form>
-
-            <aside className="config-panel">
-              <span className="eyebrow">Pievienotās ierīces</span>
-              <div className="device-list">
-                {configurationDevices.map((device) => (
-                  <div className="device-row" key={device.value}>
-                    <span>
-                      <strong>{device.name}</strong>
-                      <small>{device.method}: {device.value} | {device.server}</small>
-                    </span>
-                    {statusPill(device.status)}
-                  </div>
-                ))}
-              </div>
-              <p className="privacy-note">P2P pēc sērijas numura šobrīd ir prototipa plūsma. Produkcijā vajadzēs drošu ierīces reģistru, tokenus un ražotāja API.</p>
-            </aside>
           </div>
         </section>
 
@@ -1011,7 +1089,7 @@ export function Dashboard({
               <div className="metric-card">
                 <span>Kameras limits</span>
                 <strong>{serverCatalog.reduce((sum, server) => sum + server.cameraLimit, 0)}</strong>
-                <small>Kopējā demo kapacitāte</small>
+                <small>Kopējā prototipa kapacitāte</small>
               </div>
             </div>
 
