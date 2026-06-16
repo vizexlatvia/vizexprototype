@@ -74,6 +74,48 @@ function sendText(response, statusCode, message) {
   response.end(message);
 }
 
+function decodeStreamPayload(payload) {
+  if (!payload) return {};
+
+  try {
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function decodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return "";
+  }
+}
+
+function decodeV1StreamPath(pathname) {
+  const parts = pathname.replace("/stream/v1/", "").split("/");
+
+  return {
+    token: decodePathSegment(parts[0] ?? ""),
+    ip: decodePathSegment(parts[1] ?? ""),
+    port: decodePathSegment(parts[2] ?? "80"),
+    channel: decodePathSegment(parts[3] ?? "1"),
+    subtype: decodePathSegment(parts[4] ?? "1"),
+    user: decodePathSegment(parts[5] ?? ""),
+    pass: decodePathSegment(parts.slice(6).join("/") ?? "")
+  };
+}
+
+function getRequestValue(requestUrl, payload, key, fallback = "") {
+  const payloadValue = payload[key];
+  if (payloadValue !== undefined && payloadValue !== null) return String(payloadValue);
+  return requestUrl.searchParams.get(key) ?? fallback;
+}
+
 function requestCamera(targetUrl, authHeader) {
   return new Promise((resolve, reject) => {
     const client = targetUrl.protocol === "https:" ? https : http;
@@ -120,19 +162,19 @@ function handleHealth(response) {
   }));
 }
 
-async function handleMjpeg(request, response, requestUrl) {
-  const token = requestUrl.searchParams.get("token") ?? "";
+async function handleMjpeg(request, response, requestUrl, payload = {}) {
+  const token = getRequestValue(requestUrl, payload, "token");
   if (GATEWAY_TOKEN && token !== GATEWAY_TOKEN) {
     sendText(response, 401, "Gateway token is missing or invalid.");
     return;
   }
 
-  const ip = (requestUrl.searchParams.get("ip") ?? "").trim();
-  const port = Number(requestUrl.searchParams.get("port") ?? "80");
-  const username = requestUrl.searchParams.get("user") ?? "";
-  const password = requestUrl.searchParams.get("pass") ?? "";
-  const channel = requestUrl.searchParams.get("channel")?.replace(/\D/g, "") || "1";
-  const subtype = requestUrl.searchParams.get("subtype")?.replace(/\D/g, "") || "1";
+  const ip = getRequestValue(requestUrl, payload, "ip").trim();
+  const port = Number(getRequestValue(requestUrl, payload, "port", "80"));
+  const username = getRequestValue(requestUrl, payload, "user");
+  const password = getRequestValue(requestUrl, payload, "pass");
+  const channel = getRequestValue(requestUrl, payload, "channel", "1").replace(/\D/g, "") || "1";
+  const subtype = getRequestValue(requestUrl, payload, "subtype", "1").replace(/\D/g, "") || "1";
 
   if (!isPrivateIpv4(ip) || !Number.isInteger(port) || port < 1 || port > 65535) {
     sendText(response, 400, "Invalid local camera IP address or port.");
@@ -183,6 +225,24 @@ const server = http.createServer((request, response) => {
 
   if (requestUrl.pathname === "/api/dahua/mjpeg") {
     void handleMjpeg(request, response, requestUrl);
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/api/dahua/mjpeg/")) {
+    const payload = decodeStreamPayload(requestUrl.pathname.replace("/api/dahua/mjpeg/", ""));
+    void handleMjpeg(request, response, requestUrl, payload);
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/stream/v1/")) {
+    const payload = decodeV1StreamPath(requestUrl.pathname);
+    void handleMjpeg(request, response, requestUrl, payload);
+    return;
+  }
+
+  if (requestUrl.pathname.startsWith("/stream/")) {
+    const payload = decodeStreamPayload(requestUrl.pathname.replace("/stream/", ""));
+    void handleMjpeg(request, response, requestUrl, payload);
     return;
   }
 

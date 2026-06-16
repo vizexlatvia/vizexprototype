@@ -1439,6 +1439,7 @@ h1 {
 
 .stream-panel input,
 .archive-stream-panel select,
+.camera-management-form select,
 .dahua-gateway-panel input,
 .camera-management-form input {
   width: 100%;
@@ -1448,6 +1449,38 @@ h1 {
   background: rgba(3, 6, 10, 0.68);
   color: var(--ink);
   padding: 0 12px;
+}
+
+.stream-video,
+.archive-frame {
+  object-fit: cover;
+}
+
+.stream-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(2, 4, 7, 0.78), rgba(4, 7, 11, 0.86));
+  text-align: center;
+}
+
+.stream-placeholder strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.stream-placeholder span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.stream-placeholder.error strong {
+  color: #ff9ca5;
 }
 
 .stream-port-grid {

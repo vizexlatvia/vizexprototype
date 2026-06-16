@@ -6,6 +6,7 @@ export type CameraProfile = {
   id: string;
   code: string;
   name: string;
+  streamProvider?: "local" | "dolynk";
   ip: string;
   username: string;
   password: string;
@@ -13,6 +14,8 @@ export type CameraProfile = {
   subtype: string;
   remoteGatewayUrl?: string;
   remoteGatewayToken?: string;
+  dolynkDeviceId?: string;
+  dolynkStreamType?: string;
   status: "Online";
   createdAt: string;
   lastStartedAt?: string;
@@ -89,20 +92,27 @@ function sanitizeCameraProfile(item: unknown, index: number): CameraProfile | nu
 
   const source = item as Partial<CameraProfile>;
   const name = String(source.name ?? "").trim();
+  const streamProvider = source.streamProvider === "dolynk" ? "dolynk" : "local";
   const ip = normalizeCameraIp(String(source.ip ?? ""));
   const username = String(source.username ?? "").trim();
   const password = String(source.password ?? "");
-  const channel = String(source.channel ?? "1").replace(/\D/g, "") || "1";
+  const channelDefault = streamProvider === "dolynk" ? "0" : "1";
+  const channel = String(source.channel ?? channelDefault).replace(/\D/g, "") || channelDefault;
   const subtype = String(source.subtype ?? "1").replace(/\D/g, "") || "1";
   const remoteGatewayUrl = normalizeGatewayBaseUrl(String(source.remoteGatewayUrl ?? ""));
   const remoteGatewayToken = String(source.remoteGatewayToken ?? "").trim();
+  const dolynkDeviceId = String(source.dolynkDeviceId ?? "").trim();
+  const dolynkStreamType = String(source.dolynkStreamType ?? "1").replace(/\D/g, "") || "1";
 
-  if (!name || !ip || !username || !password) return null;
+  if (!name) return null;
+  if (streamProvider === "local" && (!ip || !username || !password)) return null;
+  if (streamProvider === "dolynk" && !dolynkDeviceId) return null;
 
   return {
     id: String(source.id ?? `${Date.now()}-${index}`),
     code: String(source.code ?? `CAM-${String(index + 1).padStart(2, "0")}`),
     name,
+    streamProvider,
     ip,
     username,
     password,
@@ -110,6 +120,8 @@ function sanitizeCameraProfile(item: unknown, index: number): CameraProfile | nu
     subtype,
     remoteGatewayUrl,
     remoteGatewayToken,
+    dolynkDeviceId,
+    dolynkStreamType,
     status: "Online",
     createdAt: String(source.createdAt ?? new Date().toISOString()),
     lastStartedAt: source.lastStartedAt ? String(source.lastStartedAt) : undefined

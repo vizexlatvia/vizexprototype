@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, FormEvent } from "react";
+import { DolynkVideoPlayer } from "./DolynkVideoPlayer";
 import {
   defaultGridLayoutState,
   loadWorkspaceState,
@@ -32,6 +33,7 @@ type DashboardProps = {
 };
 
 type CameraProfileDraft = {
+  streamProvider: "local" | "dolynk";
   name: string;
   ip: string;
   username: string;
@@ -39,16 +41,21 @@ type CameraProfileDraft = {
   channel: string;
   remoteGatewayUrl: string;
   remoteGatewayToken: string;
+  dolynkDeviceId: string;
+  dolynkStreamType: string;
 };
 
 const defaultCameraProfileDraft: CameraProfileDraft = {
+  streamProvider: "local",
   name: "",
   ip: "192.168.8.10",
   username: "",
   password: "",
   channel: "1",
   remoteGatewayUrl: "",
-  remoteGatewayToken: ""
+  remoteGatewayToken: "",
+  dolynkDeviceId: "",
+  dolynkStreamType: "1"
 };
 
 const maxActivityItems = 7;
@@ -131,7 +138,15 @@ function createActivity(message: string): ActivityItem {
   };
 }
 
+function encodePathSegment(value: string) {
+  return encodeURIComponent(value).replace(/\./g, "%2E");
+}
+
 function buildDahuaGatewayUrl(profile: CameraProfile) {
+  if (profile.streamProvider === "dolynk") {
+    return "";
+  }
+
   const params = new URLSearchParams({
     ip: normalizeCameraIp(profile.ip),
     port: "80",
@@ -147,7 +162,33 @@ function buildDahuaGatewayUrl(profile: CameraProfile) {
     params.set("token", remoteGatewayToken);
   }
 
-  return `${remoteGatewayUrl || ""}/api/dahua/mjpeg?${params.toString()}`;
+  if (remoteGatewayUrl) {
+    const parts = [
+      remoteGatewayToken || "no-token",
+      normalizeCameraIp(profile.ip),
+      "80",
+      profile.channel || "1",
+      profile.subtype || "1",
+      profile.username,
+      profile.password
+    ].map(encodePathSegment);
+
+    return `${remoteGatewayUrl}/stream/v1/${parts.join("/")}`;
+  }
+
+  return `/api/dahua/mjpeg?${params.toString()}`;
+}
+
+function cameraProviderLabel(profile: CameraProfile) {
+  return profile.streamProvider === "dolynk" ? "DoLynk Cloud" : "Local";
+}
+
+function getCameraConnectionDetail(profile: CameraProfile) {
+  if (profile.streamProvider === "dolynk") {
+    return `Device ${profile.dolynkDeviceId || "-"} | CH ${profile.channel || "0"} | HLS ${profile.dolynkStreamType || "1"}`;
+  }
+
+  return `${profile.ip} | CH ${profile.channel || "1"} / SUB ${profile.subtype || "1"} | ${profile.remoteGatewayUrl ? "Remote" : "Local"}`;
 }
 
 function profileToCamera(profile: CameraProfile, index: number): Camera {
@@ -156,10 +197,14 @@ function profileToCamera(profile: CameraProfile, index: number): Camera {
     sort_order: index + 1,
     code: profile.code,
     name: profile.name,
-    location: normalizeCameraIp(profile.ip),
-    model: "Dahua IP kamera",
+    location: profile.streamProvider === "dolynk"
+      ? `DoLynk ${profile.dolynkDeviceId || ""}`.trim()
+      : normalizeCameraIp(profile.ip),
+    model: profile.streamProvider === "dolynk" ? "Dahua Cloud kamera" : "Dahua IP kamera",
     status: profile.status,
-    quality: `CH ${profile.channel || "1"} / SUB ${profile.subtype || "1"}`
+    quality: profile.streamProvider === "dolynk"
+      ? `CH ${profile.channel || "0"} / HLS ${profile.dolynkStreamType || "1"}`
+      : `CH ${profile.channel || "1"} / SUB ${profile.subtype || "1"}`
   };
 }
 
@@ -468,27 +513,78 @@ export function Dashboard({
     return cameraProfile ? buildDahuaGatewayUrl(cameraProfile) : "";
   }
 
+  function renderCameraStream(profileItem: CameraProfile | null, alt: string, className: string) {
+    if (!profileItem) return null;
+
+    if (profileItem.streamProvider === "dolynk" && profileItem.dolynkDeviceId) {
+      return (
+        <DolynkVideoPlayer
+          channelId={profileItem.channel || "0"}
+          className={className}
+          deviceId={profileItem.dolynkDeviceId}
+          streamType={profileItem.dolynkStreamType || "1"}
+        />
+      );
+    }
+
+    const url = buildDahuaGatewayUrl(profileItem);
+    if (!url) return null;
+
+    return <img className={`${className} mjpeg-frame`} src={url} alt={alt} />;
+  }
+
   function updateCameraDraft(field: keyof CameraProfileDraft, value: string) {
-    setCameraDraft((current) => ({ ...current, [field]: value }));
+    setCameraDraft((current) => {
+      if (field === "streamProvider") {
+        return {
+          ...current,
+          streamProvider: value as CameraProfileDraft["streamProvider"],
+          channel: value === "dolynk" ? "0" : "1"
+        };
+      }
+
+      return { ...current, [field]: value };
+    });
   }
 
   function submitCameraProfile(event: FormEvent) {
     event.preventDefault();
 
+    const streamProvider = cameraDraft.streamProvider;
     const name = cameraDraft.name.trim();
     const ip = normalizeCameraIp(cameraDraft.ip);
     const username = cameraDraft.username.trim();
     const password = cameraDraft.password;
-    const channel = cameraDraft.channel.trim() || "1";
+    const channel = cameraDraft.channel.trim() || (streamProvider === "dolynk" ? "0" : "1");
     const remoteGatewayUrl = normalizeGatewayBaseUrl(cameraDraft.remoteGatewayUrl);
     const remoteGatewayToken = cameraDraft.remoteGatewayToken.trim();
+    const dolynkDeviceId = cameraDraft.dolynkDeviceId.trim();
+    const dolynkStreamType = cameraDraft.dolynkStreamType.trim() || "1";
 
-    if (!name || !ip || !username || !password) {
+    if (!name) {
       onToast("Aizpildi nosaukumu, IP, lietotāju un paroli");
       return;
     }
 
-    const duplicateProfile = cameraProfiles.find((profileItem) => profileItem.ip === ip && (profileItem.channel || "1") === channel);
+    if (streamProvider === "local" && (!ip || !username || !password)) {
+      onToast("Aizpildi nosaukumu, IP, lietotāju un paroli");
+      return;
+    }
+
+    if (streamProvider === "dolynk" && !dolynkDeviceId) {
+      onToast("DoLynk kamerai nepieciešams Device ID");
+      return;
+    }
+
+    const duplicateProfile = cameraProfiles.find((profileItem) => (
+      streamProvider === "dolynk"
+        ? profileItem.streamProvider === "dolynk" &&
+          profileItem.dolynkDeviceId === dolynkDeviceId &&
+          (profileItem.channel || "0") === channel
+        : profileItem.streamProvider !== "dolynk" &&
+          profileItem.ip === ip &&
+          (profileItem.channel || "1") === channel
+    ));
     if (duplicateProfile) {
       onToast(`${duplicateProfile.code} jau izmanto IP ${ip} un kanālu ${channel}`);
       return;
@@ -499,6 +595,7 @@ export function Dashboard({
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       code,
       name,
+      streamProvider,
       ip,
       username,
       password,
@@ -506,6 +603,8 @@ export function Dashboard({
       subtype: "1",
       remoteGatewayUrl,
       remoteGatewayToken,
+      dolynkDeviceId,
+      dolynkStreamType,
       status: "Online",
       createdAt: new Date().toISOString(),
       lastStartedAt: new Date().toISOString()
@@ -583,11 +682,30 @@ export function Dashboard({
         </div>
         <form className="camera-management-form" onSubmit={submitCameraProfile}>
           <label>
+            Avots
+            <select
+              value={cameraDraft.streamProvider}
+              onChange={(event) => updateCameraDraft("streamProvider", event.target.value)}
+            >
+              <option value="local">Lokālā Dahua kamera</option>
+              <option value="dolynk">DoLynk Cloud kamera</option>
+            </select>
+          </label>
+          <label>
             Nosaukums
             <input
               value={cameraDraft.name}
               onChange={(event) => updateCameraDraft("name", event.target.value)}
               placeholder="Ieeja, noliktava, pagalms"
+              type="text"
+            />
+          </label>
+          <label>
+            DoLynk Device ID
+            <input
+              value={cameraDraft.dolynkDeviceId}
+              onChange={(event) => updateCameraDraft("dolynkDeviceId", event.target.value)}
+              placeholder="Aizpildi tikai DoLynk kamerai"
               type="text"
             />
           </label>
@@ -609,6 +727,16 @@ export function Dashboard({
               placeholder="1"
               type="text"
             />
+          </label>
+          <label>
+            DoLynk HLS
+            <select
+              value={cameraDraft.dolynkStreamType}
+              onChange={(event) => updateCameraDraft("dolynkStreamType", event.target.value)}
+            >
+              <option value="1">Sub stream</option>
+              <option value="0">Main stream</option>
+            </select>
           </label>
           <label>
             Lietotājs
@@ -661,7 +789,7 @@ export function Dashboard({
               <span className="camera-number">{profileItem.code.replace("CAM-", "")}</span>
               <span className="camera-profile-main">
                 <strong>{profileItem.code} {profileItem.name}</strong>
-                <small>{profileItem.ip} | CH {profileItem.channel || "1"} / SUB {profileItem.subtype || "1"} | {profileItem.remoteGatewayUrl ? "Remote" : "Local"}</small>
+                <small>{getCameraConnectionDetail(profileItem)} | {cameraProviderLabel(profileItem)}</small>
               </span>
               <button className="ghost-button" onClick={() => activateCameraProfile(profileItem)} type="button">Palaist</button>
               <button className="ghost-button danger" onClick={() => removeCameraProfile(profileItem.id)} type="button">Dzēst</button>
@@ -892,8 +1020,10 @@ export function Dashboard({
                       >
                         {camera ? (
                           <>
-                            {cameraDirectUrl && !poweredOff && (
-                              <img className="stream-frame mjpeg-frame" src={cameraDirectUrl} alt={`${camera.code} direct stream`} />
+                            {!poweredOff && renderCameraStream(
+                              cameraProfiles.find((profileItem) => profileItem.code === camera.code) ?? null,
+                              `${camera.code} direct stream`,
+                              "stream-frame"
                             )}
                             <div className="video-noise" />
                             <div className="tile-actions">
@@ -938,8 +1068,10 @@ export function Dashboard({
                 </div>
               ) : (
                 <div className={`video-main ${isCameraPoweredOff(activeCamera) ? "offline" : ""}`}>
-                  {activeCameraDirectUrl && !isCameraPoweredOff(activeCamera) && (
-                    <img className="stream-frame mjpeg-frame" src={activeCameraDirectUrl} alt={`${activeCamera.code} direct stream`} />
+                  {!isCameraPoweredOff(activeCamera) && renderCameraStream(
+                    activeCameraProfile,
+                    `${activeCamera.code} direct stream`,
+                    "stream-frame"
                   )}
                   <div className="video-noise" />
                   <div className="video-reticle" />
@@ -1060,7 +1192,9 @@ export function Dashboard({
                     <span className="eyebrow">Stream pārbaude</span>
                     <h2>Stream pārbaude</h2>
                   </div>
-                  {recordingCameraDirectUrl && <span className="pill">{activeRecordingCamera.code}</span>}
+                  {(recordingCameraDirectUrl || activeRecordingCameraProfile?.streamProvider === "dolynk") && (
+                    <span className="pill">{activeRecordingCamera.code}</span>
+                  )}
                 </div>
                 <label>
                   Kamera
@@ -1070,9 +1204,13 @@ export function Dashboard({
                     )}
                   </select>
                 </label>
-                {recordingCameraDirectUrl ? (
+                {recordingCameraDirectUrl || activeRecordingCameraProfile?.streamProvider === "dolynk" ? (
                   <div className="archive-frame-wrap">
-                    <img className="archive-frame mjpeg-frame" src={recordingCameraDirectUrl} alt={`${activeRecordingCamera.code} direct stream`} />
+                    {renderCameraStream(
+                      activeRecordingCameraProfile,
+                      `${activeRecordingCamera.code} direct stream`,
+                      "archive-frame"
+                    )}
                   </div>
                 ) : (
                   <div className="archive-empty">
