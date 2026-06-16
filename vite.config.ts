@@ -5,6 +5,7 @@ import http from "node:http";
 import https from "node:https";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
+import { createHlsLive } from "./api/dolynk/_client.js";
 
 function md5(value: string) {
   return createHash("md5").update(value).digest("hex");
@@ -99,12 +100,74 @@ function pipeCameraResponse(cameraResponse: IncomingMessage, browserRequest: Inc
   cameraResponse.pipe(browserResponse);
 }
 
+function readJsonBody(request: IncomingMessage) {
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    request.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    request.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8").trim();
+      if (!text) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(text) as Record<string, unknown>);
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    request.on("error", reject);
+  });
+}
+
 function dahuaLocalGatewayPlugin(): Plugin {
   return {
     name: "vizex-dahua-local-gateway",
     configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
         const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+
+        if (requestUrl.pathname === "/api/dolynk/hls") {
+          if (request.method !== "POST") {
+            response.statusCode = 405;
+            response.setHeader("Content-Type", "application/json; charset=utf-8");
+            response.end(JSON.stringify({ error: "Method not allowed" }));
+            return;
+          }
+
+          try {
+            const body = await readJsonBody(request);
+            const deviceId = String(body.deviceId ?? "").trim();
+            const channelId = String(body.channelId ?? "0").trim();
+            const streamType = String(body.streamType ?? "1").trim();
+
+            if (!deviceId) {
+              response.statusCode = 400;
+              response.setHeader("Content-Type", "application/json; charset=utf-8");
+              response.end(JSON.stringify({ error: "deviceId is required" }));
+              return;
+            }
+
+            const stream = await createHlsLive({ deviceId, channelId, streamType });
+            response.statusCode = 200;
+            response.setHeader("Content-Type", "application/json; charset=utf-8");
+            response.end(JSON.stringify(stream));
+          } catch (error) {
+            response.statusCode = 500;
+            response.setHeader("Content-Type", "application/json; charset=utf-8");
+            response.end(JSON.stringify({
+              error: error instanceof Error ? error.message : "Unknown DoLynk error"
+            }));
+          }
+
+          return;
+        }
 
         if (requestUrl.pathname !== "/api/dahua/mjpeg") {
           next();

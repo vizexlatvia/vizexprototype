@@ -54,12 +54,24 @@ export function DolynkVideoPlayer({
           })
         });
 
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload?.error || "Neizdevās saņemt DoLynk streamu.");
+        const responseText = await response.text();
+        let payload: Record<string, unknown> = {};
+
+        try {
+          payload = responseText ? JSON.parse(responseText) as Record<string, unknown> : {};
+        } catch {
+          throw new Error(responseText || "DoLynk endpoint neatgrieza derigu JSON atbildi.");
         }
 
-        const playlistUrl = String(payload?.playlistUrl || "");
+        if (!response.ok) {
+          throw new Error(
+            typeof payload.error === "string"
+              ? payload.error
+              : "Neizdevas sanemt DoLynk streamu."
+          );
+        }
+
+        const playlistUrl = String(payload.playlistUrl || "");
         if (!playlistUrl) {
           throw new Error("DoLynk neatgrieza HLS adresi.");
         }
@@ -80,12 +92,12 @@ export function DolynkVideoPlayer({
             if (data.fatal && !cancelled) {
               setStreamState({
                 status: "error",
-                message: "DoLynk video atskaņošana neizdevās."
+                message: "DoLynk video atskanosana neizdevas."
               });
             }
           });
         } else {
-          throw new Error("Šī pārlūkprogramma neatbalsta HLS atskaņošanu.");
+          throw new Error("Si parlukprogramma neatbalsta HLS atskanosanu.");
         }
 
         setStreamState({
@@ -96,7 +108,7 @@ export function DolynkVideoPlayer({
         if (cancelled) return;
         setStreamState({
           status: "error",
-          message: error instanceof Error ? error.message : "Nezināma DoLynk kļūda"
+          message: error instanceof Error ? error.message : "Nezinama DoLynk kluda"
         });
       }
     }
@@ -123,7 +135,7 @@ export function DolynkVideoPlayer({
       />
       {streamState.status !== "ready" && (
         <div className={`stream-placeholder ${streamState.status === "error" ? "error" : ""}`}>
-          <strong>{streamState.status === "error" ? "DoLynk kļūda" : "Ielādē plūsmu"}</strong>
+          <strong>{streamState.status === "error" ? "DoLynk kluda" : "Ielade plūsmu"}</strong>
           <span>{streamState.message}</span>
         </div>
       )}
